@@ -1,0 +1,132 @@
+# ------------------------------------------------------------------
+# Default configuration for the Indian Market Intelligence agent.
+#
+# This file holds NON-SECRET configuration.
+# Secrets (API keys, tokens, credentials) are read from the environment /
+# `.env` ONLY and are never stored here.
+#
+# If you want to use a private config file, set APP_CONFIG_PATH to its path.
+
+# Runtime environment: development | testing | production
+environment: development
+
+# ----------------------------- Market -----------------------------
+market:
+  timezone: "Asia/Kolkata"
+  sessions:
+    equity_cash:
+      name: "NSE Cash Equity"
+      start: "09:15"
+      end: "15:30"
+      days: [0, 1, 2, 3, 4]
+    equity_derivatives:
+      name: "NSE Equity Derivatives"
+      start: "09:15"
+      end: "15:30"
+      days: [0, 1, 2, 3, 4]
+    pre_open:
+      name: "Pre-open call auction"
+      start: "09:00"
+      end: "09:15"
+      days: [0, 1, 2, 3, 4]
+  instruments: &market_instruments
+    - {symbol: "NIFTY",    name: "NIFTY 50 Index",   kind: index}
+    - {symbol: "BANKNIFTY", name: "NIFTY Bank Index", kind: index}
+
+# ------------------------- Data provider --------------------------
+provider:
+  name: "mock_replay"          # Planned: nse | broker_api | yfinance | mock_replay
+  base_url: ""
+  timeout_seconds: 10
+  params: {}
+
+# --------------------------- Persistence --------------------------
+firestore:
+  project_id: ""
+  database: "market"
+  credentials_path: ""         # secret — set via FIREBASE_CREDENTIALS_PATH
+
+# --------------------------- AI layer ------------------------------
+gemini:
+  api_key: ""                  # secret — set via GEMINI_API_KEY
+  model: ""
+  temperature: 0.2
+  max_output_tokens: 2048
+
+# ------------------------- Notifications -----------------------------
+telegram:
+  bot_token: ""                # secret — set via TELEGRAM_BOT_TOKEN
+  chat_id: ""                  # secret — set via TELEGRAM_CHAT_ID
+
+# ----------------------------- Risk --------------------------------
+risk:
+  account_size: 1000000.0          # INR
+  risk_per_trade_pct: 1.0          # % of account risked per paper trade
+  max_daily_loss_pct: 3.0          # halt paper trading above this % loss
+  max_concurrent_paper_trades: 3
+  max_trades_per_day: 5
+  min_risk_reward: 1.5             # minimum reward:risk
+  min_expected_value: 0.0          # minimum expected value (INR units of R)
+  max_consecutive_losses: 3
+  cooldown_after_loss_minutes: 60  # pause after max consecutive losses
+  emergency_disable: false
+
+# ------------------------ Transaction costs -------------------------
+# Indian market cost model (equity derivatives / cash). All percentages are
+# expressed in % of notional traded value unless noted otherwise.
+transaction_costs:
+  brokerage: 0.0                    # flat % of notional (0 = free/zero-broker)
+  stt_buy_pct: 0.0
+  stt_sell_pct: 0.025               # equity FO sell-side STT example
+  gst_pct: 18.0                     # GST on (brokerage + exchange + SEBI)
+  exchange_charges_pct: 0.045        # NSE turnover fee (approx)
+  sebi_charges_pct: 0.0001
+  stamp_duty_pct: 0.003
+  slippage_pct: 0.05                # assumed slippage per side
+  bid_ask_spread_pct: 0.02          # assumed crossing cost per side
+
+# -------------------------- Data quality ---------------------------------
+data_quality:
+  max_staleness_seconds: 300         # quotes older than this are WARNING
+  max_spread_pct: 2.0                # (ask-bid)/mid > this => WARNING
+  max_price_move_pct: 30.0
+  require_bid_ask: true
+  check_market_hours: true
+  check_duplicate_timestamps: true
+  check_future_timestamps: true
+
+# ---------------------------- Signals -------------------------------
+signal:
+  min_signal_score: 70               # minimum score for a tradable signal
+  min_risk_reward: 1.5
+  # Deterministic scoring weights (must sum to 100).
+  weights:
+    trend: 15
+    momentum: 10
+    price_structure: 15
+    volume: 10
+    oi: 15
+    options_structure: 15
+    volatility: 10
+    breadth: 5
+    risk_reward: 5
+  # Score -> classification bands (lower bound inclusive).
+  bands:
+    exceptional: 90
+    high_quality: 80
+    valid: 70
+    watch: 60
+    weak: 50
+    no_trade: 0
+
+# ------------------------- Strategies -------------------------------
+strategies:
+  enabled: {}
+  params: {}
+
+# --------------------------- Logging --------------------------------
+logging:
+  level: "INFO"
+  format: "%(asctime)s %(levelname)s %(name)s %(message)s"
+  file_enabled: false
+  file_path: "logs/app.log"
