@@ -32,17 +32,46 @@ from app.models.options_analysis import (
 from app.models.snapshots import BreadthSnapshot, MarketSnapshot
 from app.models.technical import MarketStructure, TechnicalIndicators
 from app.models.time import IST, UTC, MARKET_TIMEZONE, ensure_ist, now_ist
+from app.models.backtesting import (
+    BacktestResult,
+    BacktestTrade,
+    EquityPoint,
+    ExitReason,
+    RobustnessReport,
+    StrategyPerformance,
+    TradeResult,
+    WalkForwardFoldResult,
+    WalkForwardResult,
+)
+from app.models.ai import Contradiction, GeminiAnalysis, NewsItem
+from app.models.paper_trading import PaperPosition, PaperTradeOrder
+from app.models.risk import (
+    CostBreakdown,
+    ExpectedValueResult,
+    PositionSize,
+    RiskAssessment,
+    RiskState,
+)
+from app.models.trading import Signal, StrategyCandidate
 from app.models.validation import DataQualityReport, QualityIssue
 
 __all__ = [
     "Alert",
+    "BacktestResult",
+    "BacktestTrade",
     "BreadthSnapshot",
+    "Contradiction",
+    "CostBreakdown",
+    "EquityPoint",
+    "ExitReason",
+    "ExpectedValueResult",
     "DataQuality",
     "DataQualityReport",
     "Direction",
     "FIIDIIFlow",
     "FutureContract",
     "FuturesSnapshot",
+    "GeminiAnalysis",
     "Instrument",
     "InstrumentKind",
     "IST",
@@ -53,6 +82,7 @@ __all__ = [
     "MarketSnapshot",
     "MarketStructure",
     "Moneyness",
+    "NewsItem",
     "OISummary",
     "OptionChainEntry",
     "OptionChainSnapshot",
@@ -60,16 +90,28 @@ __all__ = [
     "OptionGreeks",
     "OptionMetrics",
     "OptionType",
+    "PaperPosition",
+    "PaperTradeOrder",
     "PositionBuild",
+    "PositionSize",
     "QualityIssue",
+    "RiskAssessment",
+    "RiskState",
+    "RobustnessReport",
     "Severity",
+    "Signal",
     "SignalClassification",
+    "StrategyCandidate",
+    "StrategyPerformance",
     "StrikePositionAnalysis",
     "SystemEvent",
     "SystemEventType",
     "TechnicalIndicators",
+    "TradeResult",
     "TradeStage",
     "UTC",
+    "WalkForwardFoldResult",
+    "WalkForwardResult",
     "ensure_ist",
     "now_ist",
 ]

@@ -28,10 +28,18 @@ def minimal_market_dict() -> dict:
 @pytest.fixture(scope="session")
 def default_settings() -> Settings:
     """Settings loaded from the checked-in ``config/default.yaml``."""
-    return load_settings(config_path=DEFAULT_CONFIG_PATH, environ={})
+    return load_settings(
+        config_path=DEFAULT_CONFIG_PATH,
+        overrides={"provider.name": "mock_replay"},
+        environ={},
+    )
 
 
 @pytest.fixture()
 def fresh_settings() -> Settings:
     """Per-test fresh copy of the default settings (env-isolated)."""
-    return load_settings(config_path=DEFAULT_CONFIG_PATH, environ={})
+    return load_settings(
+        config_path=DEFAULT_CONFIG_PATH,
+        overrides={"provider.name": "mock_replay"},
+        environ={},
+    )

@@ -2,6 +2,7 @@
 
 from app.storage.base import COLLECTIONS, Repository, StorageError
 from app.storage.factories import collection_for, create_repository
+from app.storage.market_store import MarketStore
 from app.storage.memory.inmemory_repository import InMemoryRepository
 
 try:
@@ -13,6 +14,7 @@ __all__ = [
     "COLLECTIONS",
     "FirestoreRepository",
     "InMemoryRepository",
+    "MarketStore",
     "Repository",
     "StorageError",
     "collection_for",

@@ -34,6 +34,7 @@ class FirestoreRepository(Repository[Doc], Generic[Doc]):
         collection: str,
         credential_path: str | None = None,
         database: str = "market",
+        project_id: str | None = None,
     ) -> None:
         if firestore is None:
             raise StorageError(
@@ -43,6 +44,7 @@ class FirestoreRepository(Repository[Doc], Generic[Doc]):
         self.collection = collection
         self._credential_path = credential_path
         self._database = database
+        self._project_id = project_id
         self._client: Any | None = None
         self._app: Any | None = None
 
@@ -51,16 +53,31 @@ class FirestoreRepository(Repository[Doc], Generic[Doc]):
         if self._client is not None:
             return self._client
         try:
-            if self._credential_path:
-                cred = credentials.Certificate(self._credential_path)
+            from firebase_admin import get_app
+
+            try:
+                self._app = get_app()
+            except ValueError:
+                options: dict[str, Any] = {}
+                if self._project_id:
+                    options["projectId"] = self._project_id
+                cred = None
+                if self._credential_path:
+                    cred = credentials.Certificate(self._credential_path)
                 self._app = initialize_app(
-                    credentials=cred, options={"projectId": "market-agent"}
+                    cred, options=options or None
                 )
-            else:
-                self._app = initialize_app()  # GOOGLE_APPLICATION_CREDENTIALS
+            try:
+                if self._database and self._database != "(default)":
+                    self._client = firestore.client(
+                        app=self._app, database_id=self._database
+                    )
+                else:
+                    self._client = firestore.client(app=self._app)
+            except TypeError:
+                self._client = firestore.client(app=self._app)
         except Exception as exc:  # pragma: no cover - environment-dependent
             raise StorageError(f"cannot initialize firebase app: {exc}") from exc
-        self._client = firestore.client(app=self._app, database=self._database)
         return self._client
 
     # -- repository interface ------------------------------------------

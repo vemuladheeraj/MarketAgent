@@ -1,1 +1,5 @@
-﻿"""Module package (scaffold; implementations arrive in later phases)."""
+"""Gemini integration package."""
+
+from app.ai.gemini.client import GeminiClient
+
+__all__ = ["GeminiClient"]

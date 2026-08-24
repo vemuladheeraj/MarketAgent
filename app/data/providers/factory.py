@@ -5,10 +5,12 @@ from __future__ import annotations
 from app.config.settings import ProviderConfig
 from app.data.providers.base import MarketDataProvider, ProviderError
 from app.data.providers.mock import MockMarketDataProvider
+from app.data.providers.nse import NSEMarketDataProvider
 
 #: Registry of available providers keyed by ``.name``.
 PROVIDER_REGISTRY: dict[str, type[MarketDataProvider]] = {
     MockMarketDataProvider.name: MockMarketDataProvider,
+    NSEMarketDataProvider.name: NSEMarketDataProvider,
 }
 
 

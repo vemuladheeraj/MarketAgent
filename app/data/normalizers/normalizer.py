@@ -81,6 +81,7 @@ class MarketDataNormalizer:
                 expiry_date=self._as_datetime(payload["expiry_date"]),
                 open_interest=int(payload.get("open_interest", 0)),
                 change_in_oi=payload.get("change_in_oi"),
+                price_change_pct=payload.get("price_change_pct"),
                 last_price=payload.get("last_price"),
                 bid=payload.get("bid"),
                 ask=payload.get("ask"),

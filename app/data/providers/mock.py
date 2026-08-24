@@ -155,6 +155,7 @@ class MockMarketDataProvider(MarketDataProvider):
                         "option_type": opt,
                         "open_interest": int(5000 + self._bounded() * 95000),
                         "change_in_oi": int((self._bounded() - 0.5) * 8000),
+                        "price_change_pct": round((self._bounded() - 0.5) * 6.0, 3),
                         "last_price": round(intrinsic + time_val, 2),
                         "bid": round(max(0.05, intrinsic + time_val * 0.9), 2),
                         "ask": round(intrinsic + time_val * 1.1, 2),

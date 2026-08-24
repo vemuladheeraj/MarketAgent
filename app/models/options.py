@@ -22,6 +22,7 @@ class OptionChainEntry(BaseModel):
     expiry_date: datetime
     open_interest: int = Field(default=0, ge=0)
     change_in_oi: int | None = None
+    price_change_pct: float | None = None
     last_price: float | None = Field(default=None, gt=0)
     bid: float | None = Field(default=None, gt=0)
     ask: float | None = Field(default=None, gt=0)

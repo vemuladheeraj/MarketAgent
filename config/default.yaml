@@ -35,7 +35,7 @@ market:
 
 # ------------------------- Data provider --------------------------
 provider:
-  name: "mock_replay"          # Planned: nse | broker_api | yfinance | mock_replay
+  name: "nse"                  # Available: nse | mock_replay
   base_url: ""
   timeout_seconds: 10
   params: {}

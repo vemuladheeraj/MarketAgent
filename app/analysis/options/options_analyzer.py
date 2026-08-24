@@ -17,6 +17,7 @@ from app.models.options_analysis import (
     OISummary,
     OptionGreeks,
     OptionMetrics,
+    StrikePositionAnalysis,
 )
 
 #: strikes within 0.5% of spot are considered ATM
@@ -26,27 +27,23 @@ ATM_TOLERANCE_PCT = 0.005
 def classify_position(
     option_type: OptionType, change_in_oi: float, price_change_pct: float
 ) -> PositionBuild:
-    """Classify OI + price change into a position-build type."""
+    """Classify OI + *option premium* change into a position-build type.
+
+    The same premium convention is used for calls and puts. This is not a
+    directional forecast of the underlying.
+    """
+    del option_type  # premium convention is identical for both sides
     if abs(change_in_oi) < 1:
         return PositionBuild.OI_UNCHANGED
     oi_up = change_in_oi > 0
     price_up = price_change_pct > 0
-    if option_type == OptionType.CALL:
-        if oi_up and price_up:
-            return PositionBuild.LONG_BUILDUP
-        if oi_up and not price_up:
-            return PositionBuild.SHORT_BUILDUP
-        if not oi_up and price_up:
-            return PositionBuild.SHORT_COVERING
-        return PositionBuild.LONG_UNWINDING
-    # PUT
     if oi_up and price_up:
-        return PositionBuild.SHORT_BUILDUP
-    if oi_up and not price_up:
         return PositionBuild.LONG_BUILDUP
+    if oi_up and not price_up:
+        return PositionBuild.SHORT_BUILDUP
     if not oi_up and price_up:
-        return PositionBuild.LONG_UNWINDING
-    return PositionBuild.SHORT_COVERING
+        return PositionBuild.SHORT_COVERING
+    return PositionBuild.LONG_UNWINDING
 
 
 def moneyness(spot: float, strike: float, option_type: OptionType) -> Moneyness:
@@ -57,6 +54,8 @@ def moneyness(spot: float, strike: float, option_type: OptionType) -> Moneyness:
         option_type == OptionType.PUT and strike > spot
     )
     return Moneyness.ITM if intrinsic_positive else Moneyness.OTM
+
+
 class OptionsAnalyzer:
     """Computes OptionMetrics from an OptionChainSnapshot."""
 
@@ -85,6 +84,24 @@ class OptionsAnalyzer:
 
         iv_values: list[float] = []
         for entry in chain.entries:
+            entry_key = self._entry_key(entry)
+            entry_moneyness = moneyness(spot, entry.strike, entry.option_type)
+            price_change_pct = entry.price_change_pct or 0.0
+            build = classify_position(
+                entry.option_type,
+                entry.change_in_oi or 0,
+                price_change_pct,
+            )
+            metrics.strike_analysis[entry_key] = StrikePositionAnalysis(
+                strike=entry.strike,
+                option_type=entry.option_type,
+                moneyness=entry_moneyness,
+                change_in_oi=entry.change_in_oi or 0,
+                price_change_pct=price_change_pct,
+                build=build,
+                description=build.value,
+            )
+
             sigma = entry.iv
             if sigma is None and entry.last_price is not None:
                 sigma = implied_volatility(
@@ -102,14 +119,20 @@ class OptionsAnalyzer:
                     g.theta, g.vega = gs["theta"], gs["vega"]
                 except ValueError:
                     pass
-            metrics.greeks[self._entry_key(entry)] = g
+            metrics.greeks[entry_key] = g
             if sigma is not None:
                 iv_values.append(sigma)
 
         if iv_values:
             oi.avg_iv = float(np.mean(iv_values))
 
-        if prev_metrics is not None and prev_metrics.oi.avg_iv is not None and oi.avg_iv is not None:
+        metrics.near_strikes = self._near_strikes(chain, spot)
+
+        if (
+            prev_metrics is not None
+            and prev_metrics.oi.avg_iv is not None
+            and oi.avg_iv is not None
+        ):
             delta_iv = oi.avg_iv - prev_metrics.oi.avg_iv
             metrics.iv_expansion = delta_iv > 0.005
             metrics.iv_contraction = delta_iv < -0.005
@@ -132,6 +155,20 @@ class OptionsAnalyzer:
         if not chain.entries:
             return None
         return min(chain.entries, key=lambda e: abs(e.strike - spot)).strike
+
+    @staticmethod
+    def _near_strikes(
+        chain: OptionChainSnapshot,
+        spot: float,
+        count_each_side: int = 2,
+    ) -> list[float]:
+        strikes = sorted({e.strike for e in chain.entries})
+        if not strikes:
+            return []
+        center = min(range(len(strikes)), key=lambda idx: abs(strikes[idx] - spot))
+        start = max(0, center - count_each_side)
+        end = min(len(strikes), center + count_each_side + 1)
+        return strikes[start:end]
 
     def _oi_summary(self, chain: OptionChainSnapshot, spot: float) -> OISummary:
         calls = [e for e in chain.entries if e.is_call]

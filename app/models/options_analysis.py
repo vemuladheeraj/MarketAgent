@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.enums import OptionType, PositionBuild
+from app.models.enums import Moneyness, OptionType, PositionBuild
 from app.models.time import ensure_ist
 
 
@@ -25,6 +25,7 @@ class StrikePositionAnalysis(BaseModel):
 
     strike: float = Field(gt=0)
     option_type: OptionType
+    moneyness: Moneyness
     change_in_oi: float = 0.0
     price_change_pct: float = 0.0
     build: PositionBuild
@@ -57,6 +58,7 @@ class OptionMetrics(BaseModel):
     spot_price: float = Field(gt=0)
 
     greeks: dict[str, OptionGreeks] = Field(default_factory=dict)  # key: strike+CE/PE
+    strike_analysis: dict[str, StrikePositionAnalysis] = Field(default_factory=dict)
     oi: OISummary = OISummary()
 
     atm_strike: float | None = None

@@ -382,6 +382,8 @@ def load_settings(
     """
     if env_file is not None:
         load_dotenv(str(env_file), override=True)
+    elif environ is None and (PROJECT_ROOT / ".env").is_file():
+        load_dotenv(str(PROJECT_ROOT / ".env"), override=True)
 
     if raw_data is not None:
         data = dict(raw_data)

@@ -58,9 +58,20 @@ class TestRunner:
         app = MarketAgentApplication(fresh_settings)
         ctx = app.startup()
         assert ctx.settings is fresh_settings
+        assert ctx.store is not None
+        assert ctx.store.backend == "memory"
+        assert ctx.provider is not None
         assert app.is_started()
         app.shutdown()
         assert not app.is_started()
+
+    def test_collect_and_persist_writes_snapshot(self, fresh_settings):
+        app = MarketAgentApplication(fresh_settings)
+        ctx = app.startup()
+        snap = app.collect_and_persist(ctx)
+        assert snap is not None
+        assert ctx.store.snapshots.count() >= 1
+        app.shutdown()
 
     def test_summary_never_contains_secrets(self, fresh_settings):
         app = MarketAgentApplication(fresh_settings)
@@ -73,7 +84,8 @@ class TestRunner:
         rc = run(["--config", str(tmp_path / "does-not-exist.yaml")])
         assert rc == 1
 
-    def test_clean_startup_exit_code_is_0(self):
+    def test_clean_startup_exit_code_is_0(self, monkeypatch):
+        monkeypatch.setenv("DATA_PROVIDER", "mock_replay")
         rc = run([])
         assert rc == 0
 

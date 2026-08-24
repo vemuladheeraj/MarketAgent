@@ -24,6 +24,8 @@ def collection_for(model_name: str) -> str:
         "TradeResult": "completedTrades",
         "StrategyPerformance": "strategyPerformance",
         "RegimeAssessment": "marketRegimes",
+        "RiskAssessment": "riskAssessments",
+        "RiskState": "riskState",
         "GeminiAnalysis": "geminiAnalyses",
         "Alert": "alerts",
         "SystemEvent": "systemEvents",
@@ -48,5 +50,6 @@ def create_repository(
             collection=collection,
             credential_path=config.credentials_path or None,
             database=config.database,
+            project_id=config.project_id or None,
         )
     return InMemoryRepository(document_type=document_type, collection=collection)

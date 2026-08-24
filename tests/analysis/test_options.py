@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-
 import pytest
 
 from app.analysis.options import (
@@ -28,15 +26,16 @@ ANALYZER = OptionsAnalyzer(risk_free_rate=0.065)
 
 
 def _chain(spot: float = 24000.0):
-    return NORMALIZER.normalize_chain(MockMarketDataProvider().get_option_chain("NIFTY"))
+    raw = MockMarketDataProvider(base_prices={"NIFTY": spot}).get_option_chain("NIFTY")
+    return NORMALIZER.normalize_chain(raw)
 
 
 class TestBlackScholes:
     def test_price_symmetry_put_call_parity(self):
         # call - put = S - K*e^{-rT} (put-call parity)
         S, K, T, sigma, r = 100.0, 100.0, 1.0, 0.20, 0.05
-        call = bsm_price(S, K, T, sigma, r, Call=OptionType.CALL)
-        put = bsm_price(S, K, T, sigma, r, Call=OptionType.PUT)
+        call = bsm_price(S, K, T, sigma, r, option_type=OptionType.CALL)
+        put = bsm_price(S, K, T, sigma, r, option_type=OptionType.PUT)
         parity = call - put
         import math
 
@@ -44,10 +43,10 @@ class TestBlackScholes:
         assert parity == pytest.approx(expected, abs=1e-6)
 
     def test_atm_call_price_approx(self):
-        # ATM call approx 0.4*S*sigma*sqrt(T) for small vol
+        # ATM call approx 0.4*S*sigma*sqrt(T) when rates are zero
         import math
         S, K, T, sigma = 100.0, 100.0, 0.25, 0.2
-        price = bsm_price(S, K, T, sigma)
+        price = bsm_price(S, K, T, sigma, risk_free_rate=0.0)
         approx = 0.4 * S * sigma * math.sqrt(T)
         assert price == pytest.approx(approx, rel=0.15)
 
@@ -68,9 +67,9 @@ class TestBlackScholes:
         assert g["theta"] < 0
 
     def test_iv_recovers_sigma(self):
-        S, K, T, sigma = 100.0, 105.0, 0.5, 0.25
-        price = bsm_price(S, K, T, sigma)
-        iv = implied_volatility(S, K, T, price)
+        S, K, T, sigma, r = 100.0, 105.0, 0.5, 0.25, 0.065
+        price = bsm_price(S, K, T, sigma, r)
+        iv = implied_volatility(S, K, T, price, r)
         assert iv == pytest.approx(sigma, abs=1e-4)
 
     def test_iv_none_below_intrinsic(self):
@@ -86,7 +85,7 @@ class TestClassifyAndMoneyness:
         assert classify_position(OptionType.CALL, +100, -1.0) == PositionBuild.SHORT_BUILDUP
 
     def test_put_long_buildup(self):
-        assert classify_position(OptionType.PUT, +100, -1.0) == PositionBuild.LONG_BUILDUP
+        assert classify_position(OptionType.PUT, +100, +1.0) == PositionBuild.LONG_BUILDUP
 
     def test_put_shorted_covering(self):
         assert classify_position(OptionType.PUT, -100, +1.0) == PositionBuild.SHORT_COVERING
@@ -95,11 +94,8 @@ class TestClassifyAndMoneyness:
         assert classify_position(OptionType.CALL, 0, 0.0) == PositionBuild.OI_UNCHANGED
 
     def test_moneyness_atm(self):
-        assert moneyness(100.0, 100.2, OptionType.CALL) == MoneyType.ATM.value
-        # compare against enum directly
-        from app.models.enums import Moneyness as MoneynessEnum
-
-        assert moneyness(100.0, 99.9, OptionType.CALL) == MoneynessEnum.ATM
+        assert moneyness(100.0, 100.2, OptionType.CALL) == Moneyness.ATM
+        assert moneyness(100.0, 99.9, OptionType.CALL) == Moneyness.ATM
 
     def test_moneyness_itm_otm(self):
         assert moneyness(100.0, 90.0, OptionType.CALL) == Moneyness.ITM
@@ -110,7 +106,7 @@ class TestClassifyAndMoneyness:
 
 class TestAnalyzer:
     def test_metrics_produced(self):
-        chain = _norm(24000.0)
+        chain = _chain(24000.0)
         metrics = ANALYZER.analyze(chain)
         assert metrics.underlying_symbol == "NIFTY"
         assert metrics.spot_price == pytest.approx(24000.0, rel=0.5)
@@ -118,9 +114,14 @@ class TestAnalyzer:
         assert metrics.oi.total_put_oi > 0
         assert metrics.oi.pcr is not None
         assert metrics.atm_strike is not None
+        assert metrics.near_strikes
         assert len(metrics.greeks) == 22
+        assert len(metrics.strike_analysis) == 22
         first_greek = next(iter(metrics.greeks.values()))
         assert first_greek.iv is None or 0 < first_greek.iv
+        first_strike = next(iter(metrics.strike_analysis.values()))
+        assert first_strike.moneyness in Moneyness
+        assert first_strike.build in PositionBuild
 
     def test_call_resistance_and_put_support(self):
         chain = _chain(24000.0)

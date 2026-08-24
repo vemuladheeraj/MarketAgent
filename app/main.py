@@ -2,7 +2,7 @@
 
 Run with::
 
-    python -m app.main [--config path/to.yaml] [--env-file path/to.env]
+    python -m app.main [--config path/to.yaml] [--env-file path/to.env] [--daemon]
 
 Exits with:
     0  clean startup/shutdown
@@ -40,6 +40,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the effective (non-secret) configuration and exit.",
     )
+    parser.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Run continuous scheduler loop during market hours.",
+    )
     return parser
 
 
@@ -72,7 +77,13 @@ def run(argv: list[str] | None = None) -> int:
         app.shutdown()
         return 0
 
-    context.logger.info("READY MSG=phase-1 foundation verified")
+    context.logger.info("READY MSG=market intelligence agent initialized")
+
+    if args.daemon:
+        app.run_daemon(context)
+    else:
+        app.run_cycle(context)
+
     app.shutdown()
     return 0
 
