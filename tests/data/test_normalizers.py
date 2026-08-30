@@ -5,15 +5,22 @@ from __future__ import annotations
 import pytest
 
 from app.data.normalizers import MarketDataNormalizer, NormalizerError
-from app.data.providers import MockMarketDataProvider
 from app.models import MarketCandle
+from tests.fixtures.provider_payloads import (
+    sample_breadth,
+    sample_candles,
+    sample_fii_dii,
+    sample_futures,
+    sample_option_chain,
+    sample_quote,
+)
 
 NORMALIZER = MarketDataNormalizer()
 
 
 class TestNormalizerQuotes:
     def test_normalize_quote(self):
-        raw = MockMarketDataProvider().get_quote("NIFTY")
+        raw = sample_quote("NIFTY")
         quote = NORMALIZER.normalize_quote(raw, "NIFTY")
         assert quote.symbol == "NIFTY"
         assert quote.bid <= quote.ask
@@ -27,7 +34,7 @@ class TestNormalizerQuotes:
 
 class TestNormalizerCandles:
     def test_candle_list(self):
-        raw = MockMarketDataProvider().get_candles("NIFTY", 5)
+        raw = sample_candles("NIFTY", 5)
         candles = NORMALIZER.normalize_candle_list(raw)
         assert len(candles) == 5
         assert all(isinstance(c, MarketCandle) for c in candles)
@@ -36,7 +43,7 @@ class TestNormalizerCandles:
 
 class TestNormalizerChain:
     def test_chain(self):
-        raw = MockMarketDataProvider().get_option_chain("NIFTY")
+        raw = sample_option_chain("NIFTY")
         chain = NORMALIZER.normalize_chain(raw)
         assert chain.underlying_symbol == "NIFTY"
         assert len(chain.entries) == 22
@@ -45,20 +52,14 @@ class TestNormalizerChain:
 
 class TestNormalizerFlows:
     def test_breadth(self):
-        b = NORMALIZER.normalize_breadth(
-            MockMarketDataProvider().get_market_breadth()
-        )
+        b = NORMALIZER.normalize_breadth(sample_breadth())
         assert b.total > 0
 
     def test_fii_dii(self):
-        f = NORMALIZER.normalize_fii_dii(
-            MockMarketDataProvider().get_fii_dii_data()
-        )
+        f = NORMALIZER.normalize_fii_dii(sample_fii_dii())
         assert f.timestamp.tzinfo is not None
 
     def test_futures(self):
-        f = NORMALIZER.normalize_futures(
-            MockMarketDataProvider().get_futures_data("NIFTY")
-        )
+        f = NORMALIZER.normalize_futures(sample_futures("NIFTY"))
         assert f.contract.underlying_symbol == "NIFTY"
         assert f.quote.last_price > 0

@@ -107,6 +107,12 @@ class PaperTradingEngine:
 
         self._active_positions[position.position_id] = position
 
+        # Persist to durable store (dashboard/audit) — fail-soft.
+        try:
+            self.store.persist_paper_position(position)
+        except Exception:
+            pass
+
         # Synchronize risk state
         risk_state = self.store.load_risk_state(self.default_account_size)
         risk_state.open_positions = len(self._active_positions)
@@ -151,6 +157,12 @@ class PaperTradingEngine:
                 pos.unrealized_pnl = (last_px - pos.simulated_entry) * units * pos.point_value
             else:
                 pos.unrealized_pnl = (pos.simulated_entry - last_px) * units * pos.point_value
+
+            # Persist live mark-to-market (fail-soft)
+            try:
+                self.store.persist_paper_position(pos)
+            except Exception:
+                pass
 
             # Check Stop Loss
             if pos.direction == Direction.LONG and last_px <= pos.stop_loss:

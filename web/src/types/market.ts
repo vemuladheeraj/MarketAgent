@@ -177,3 +177,48 @@ export interface SystemEvent {
   message: string;
   details?: Record<string, any>;
 }
+
+export interface BriefContract {
+  tradingsymbol: string;
+  strike: number;
+  option_type: 'call' | 'put';
+  expiry_date: string;
+  last_price?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  iv?: number | null;
+  delta?: number | null;
+  open_interest: number;
+  change_in_oi?: number | null;
+  spread_pct?: number | null;
+}
+
+export interface TradeBrief {
+  id?: string;
+  generated_at: string;
+  valid_until: string;
+  action: 'BUY' | 'SELL' | 'WAIT';
+  underlying_symbol: string;
+  spot?: number | null;
+  strategy_name: string;
+  underlying_direction?: 'long' | 'short' | null;
+  contract?: BriefContract | null;
+  entry?: number | null;
+  stop_loss?: number | null;
+  targets: number[];
+  risk_reward?: number | null;
+  lots?: number | null;
+  lot_size?: number;
+  risk_amount?: number | null;
+  target_amount?: number | null;
+  net_expected_value?: number | null;
+  expectancy_r?: number | null;
+  probability?: number | null;
+  score?: number | null;
+  classification?: SignalClassificationType | null;
+  regime?: string;
+  data_quality?: string;
+  rationale: string[];
+  warnings: string[];
+  waiting_reason?: string | null;
+}

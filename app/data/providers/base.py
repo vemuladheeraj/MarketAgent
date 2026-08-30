@@ -1,13 +1,11 @@
 """Market-data provider abstraction.
 
-Providers are adapters to *external* data sources (live NSE feeds, broker
-APIs, replay files, or synthetic mocks). They return provider-neutral Python
-dicts (documented per method); the :class:`MarketDataNormalizer` converts
-those payloads into validated internal models.
+Providers are adapters to external data sources (live NSE feeds, broker APIs).
+They return provider-neutral Python dicts (documented per method); the
+:class:`MarketDataNormalizer` converts those payloads into validated internal
+models.
 
-The abstraction keeps analysis code completely decoupled from the data
-vendor. In development, the clearly-labelled ``MockMarketDataProvider`` is
-used; it never pretends to be live market data.
+The abstraction keeps analysis code completely decoupled from the data vendor.
 """
 
 from __future__ import annotations
@@ -25,10 +23,19 @@ class ProviderError(Exception):
     """Raised when a provider cannot fulfil a request."""
 
 
+class ProviderAuthError(ProviderError):
+    """Raised when the provider credentials are rejected (401/403).
+
+    Subclasses :class:`ProviderError` so every existing fail-soft handler
+    keeps working, while allowing callers to distinguish "token expired"
+    (needs human action) from transient outages (retry/backoff).
+    """
+
+
 class MarketDataProvider(ABC):
     """Interface all market-data providers must implement."""
 
-    #: unique registry key (e.g. "mock_replay", "nse", "broker_api")
+    #: unique registry key (e.g. "nse", "indstocks")
     name: str = "base"
 
     @abstractmethod

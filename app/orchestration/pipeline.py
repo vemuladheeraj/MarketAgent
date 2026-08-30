@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from app.advisor.advisor import TradeAdvisor
 from app.ai.gemini.client import GeminiClient
 from app.analysis.options.options_analyzer import OptionsAnalyzer
 from app.analysis.regime.classifier import RegimeAssessment, RegimeClassifier
@@ -27,8 +28,10 @@ from app.data.collectors.market_collector import MarketDataCollector
 from app.data.providers.base import MarketDataProvider
 from app.logging.setup import get_logger, log_event
 from app.models.ai import GeminiAnalysis
+from app.models.advisor import TradeBrief
 from app.models.enums import DataQuality, SystemEventType
 from app.models.events import SystemEvent
+from app.models.options import OptionChainSnapshot
 from app.models.options_analysis import OptionMetrics
 from app.models.paper_trading import PaperPosition
 from app.models.risk import RiskAssessment, RiskState
@@ -59,6 +62,7 @@ class PipelineCycleResult:
     risk_assessments: list[RiskAssessment] = field(default_factory=list)
     opened_paper_positions: list[PaperPosition] = field(default_factory=list)
     closed_paper_positions: list[PaperPosition] = field(default_factory=list)
+    trade_briefs: dict[str, TradeBrief] = field(default_factory=dict)
     gemini_analyses: dict[str, GeminiAnalysis] = field(default_factory=dict)
     alerts_dispatched: int = 0
 
@@ -95,6 +99,7 @@ class MarketIntelligencePipeline:
         self.paper_engine = paper_engine
         self.gemini_client = gemini_client
         self.telegram_notifier = telegram_notifier
+        self.advisor = TradeAdvisor(settings.advisor)
         self.collector = MarketDataCollector(provider)
         self._logger = get_logger("orchestration.pipeline")
 
@@ -164,6 +169,7 @@ class MarketIntelligencePipeline:
                 breadth=snapshot.breadth,
             )
             result.regimes[symbol] = regime
+            self.store.persist_regime(regime)
 
             # 3. Strategy Evaluation (Gated if data is INVALID)
             if dq_status == DataQuality.INVALID:
@@ -185,6 +191,7 @@ class MarketIntelligencePipeline:
             signals = self.strategy_engine.evaluate(strat_context, data_quality=dq_status)
             result.signals.extend(signals)
 
+            approved_pairs: list[tuple[Signal, RiskAssessment]] = []
             for sig in signals:
                 self.store.persist_signal(sig)
 
@@ -196,9 +203,11 @@ class MarketIntelligencePipeline:
                     self.store.persist_risk_assessment(assessment)
 
                     if assessment.approved:
+                        approved_pairs.append((sig, assessment))
                         pos = self.paper_engine.open_position(sig, assessment)
                         if pos:
                             result.opened_paper_positions.append(pos)
+                            self.store.persist_paper_position(pos)
                             if self.telegram_notifier:
                                 sent = self.telegram_notifier.notify_signal(sig, assessment)
                                 if sent:
@@ -210,6 +219,7 @@ class MarketIntelligencePipeline:
                 closed_positions = self.paper_engine.update_with_quote(quote)
                 for c_pos in closed_positions:
                     result.closed_paper_positions.append(c_pos)
+                    self.store.persist_paper_position(c_pos)
                     if self.telegram_notifier:
                         sent = self.telegram_notifier.notify_exit(c_pos)
                         if sent:
@@ -227,5 +237,120 @@ class MarketIntelligencePipeline:
                     news=news_items,
                 )
                 result.gemini_analyses[symbol] = analysis
+                self.store.persist_gemini_analysis(analysis)
+
+            # 7. Present-moment trade brief (companion layer, manual execution)
+            if self.settings.advisor.enabled:
+                brief = self._build_brief_for_symbol(
+                    symbol=symbol,
+                    chain=chain,
+                    metrics=opt_metrics,
+                    regime=regime,
+                    data_quality=dq_status,
+                    signals=signals,
+                    approved=approved_pairs,
+                    snapshot=snapshot,
+                )
+                if brief is not None:
+                    result.trade_briefs[symbol] = brief
+                    self.store.persist_trade_brief(brief)
+                    if (
+                        brief.is_actionable
+                        and self.telegram_notifier
+                        and self.advisor.should_notify(brief)
+                    ):
+                        if self.telegram_notifier.notify_trade_brief(brief):
+                            result.alerts_dispatched += 1
 
         return result
+
+    def _build_brief_for_symbol(
+        self,
+        *,
+        symbol: str,
+        chain: OptionChainSnapshot | None,
+        metrics: OptionMetrics | None,
+        regime,
+        data_quality: DataQuality,
+        signals: list[Signal],
+        approved: list[tuple[Signal, RiskAssessment]],
+        snapshot: MarketSnapshot,
+    ) -> TradeBrief | None:
+        """Compose the present-moment brief for one symbol in this cycle.
+
+        Priority: the highest-scoring risk-approved signal becomes an
+        actionable BUY brief; everything else produces an explicit WAIT brief
+        with the concrete reason — standing aside is a recommendation too.
+        """
+        spot: float | None = chain.spot_price if chain is not None else None
+        if spot is None:
+            quote = snapshot.quotes.get(symbol)
+            if quote is not None:
+                spot = getattr(quote, "last_price", None)
+
+        approved = [
+            pair
+            for pair in approved
+            if pair[0].score >= self.settings.advisor.min_score
+        ]
+
+        if approved:
+            best_signal, best_risk = max(approved, key=lambda pair: pair[0].score)
+            wait_kwargs = dict(
+                strategy_name=best_signal.candidate.strategy_name,
+                underlying_direction=best_signal.candidate.direction,
+                regime=regime,
+                score=best_signal.score,
+                classification=best_signal.classification,
+                data_quality=data_quality,
+            )
+            if chain is not None:
+                brief = self.advisor.build_brief(
+                    signal=best_signal,
+                    risk=best_risk,
+                    chain=chain,
+                    metrics=metrics,
+                    regime=regime,
+                    data_quality=data_quality,
+                )
+                if brief is not None:
+                    return brief
+                return self.advisor.build_wait(
+                    underlying_symbol=symbol,
+                    spot=spot,
+                    reason=(
+                        "Approved setup, but the live option chain has no usable "
+                        "contract for a concrete premium plan at this strike."
+                    ),
+                    **wait_kwargs,
+                )
+            return self.advisor.build_wait(
+                underlying_symbol=symbol,
+                spot=spot,
+                reason="Live option chain unavailable — no concrete contract to bid.",
+                **wait_kwargs,
+            )
+
+        if signals:
+            top = max(signals, key=lambda s: s.score)
+            if top.accepted:
+                reasons = ", ".join(top.rejection_reasons) or "risk gates"
+                reason = (
+                    f"Top setup '{top.candidate.strategy_name}' ({top.score:.0f}) "
+                    f"cleared scoring but was blocked by: {reasons}."
+                )
+            else:
+                reason = (
+                    f"Top setup '{top.candidate.strategy_name}' scored "
+                    f"{top.score:.0f} ({top.classification.value}) — below the "
+                    f"acceptance bar."
+                )
+        else:
+            reason = "No strategy setup in the current regime — standing aside."
+        return self.advisor.build_wait(
+            underlying_symbol=symbol,
+            spot=spot,
+            reason=reason,
+            regime=regime,
+            data_quality=data_quality,
+        )

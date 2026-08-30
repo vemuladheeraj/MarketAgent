@@ -11,6 +11,7 @@ from app.config.settings import LoggingConfig
 from app.logging.setup import configure_logging, get_logger, log_event
 from app.main import run
 from app.orchestration.runner import MarketAgentApplication
+from tests.fixtures.nse_stub import make_stub_nse_provider
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +66,11 @@ class TestRunner:
         app.shutdown()
         assert not app.is_started()
 
-    def test_collect_and_persist_writes_snapshot(self, fresh_settings):
+    def test_collect_and_persist_writes_snapshot(self, fresh_settings, monkeypatch):
+        monkeypatch.setattr(
+            "app.orchestration.runner.create_provider",
+            lambda _config: make_stub_nse_provider(),
+        )
         app = MarketAgentApplication(fresh_settings)
         ctx = app.startup()
         snap = app.collect_and_persist(ctx)
@@ -85,7 +90,11 @@ class TestRunner:
         assert rc == 1
 
     def test_clean_startup_exit_code_is_0(self, monkeypatch):
-        monkeypatch.setenv("DATA_PROVIDER", "mock_replay")
+        monkeypatch.setattr(
+            "app.orchestration.runner.create_provider",
+            lambda _config: make_stub_nse_provider(),
+        )
+        monkeypatch.setenv("DATA_PROVIDER", "nse")
         rc = run([])
         assert rc == 0
 

@@ -1,13 +1,16 @@
-# Indian Market Intelligence & Options Research Agent
+# MarketAgent — Your Indian Options Trading Companion
 
 A personal, quantitative research and decision-support system for the Indian
 equity and derivatives markets (NSE/NIFTY/BANKNIFTY). Built to *test whether an
 edge exists* â€” not to promise one.
 
-> **Critical rule**: This system is a research tool. It does **not** place real
-> trades (and never will in v1), does **not** fabricate market data or results,
-> and does **not** claim profitability. Backtested, simulated or paper-traded
-> numbers are research artifacts only.
+> **How it works**: MarketAgent is your present-moment trading companion. It
+> tells you what the quant model would do *right now* — direction, the exact
+> option contract (e.g. `NIFTY 24750CE`), premium entry/stop/targets, and
+> position size — but it does **not** place trades. You execute manually in
+> your broker app. It does **not** fabricate market data or results, and does
+> **not** claim profitability. Paper-traded numbers are research artifacts
+> only.
 
 ---
 
@@ -40,9 +43,8 @@ constituting the full specification of the Indian Market Intelligence & Options 
 
 ### Phase 2 - Market Data
 
-- Provider abstraction covering quotes, candles, option chains, futures,
+- Live `indstocks` and `nse` providers for quotes, candles, option chains, futures,
   breadth, VIX, and FII/DII flows.
-- Deterministic `mock_replay` provider for development and tests.
 - Normalizers from provider payloads into internal Pydantic models.
 - Data-quality validator with `VALID` / `WARNING` / `INVALID` reports.
 - Market snapshot collector that records provider failures as quality metadata.
@@ -111,8 +113,8 @@ constituting the full specification of the Indian Market Intelligence & Options 
 - `MarketStore` persists market snapshots, option chains, signals, regimes,
   risk assessments, risk state, and system events. If `FIREBASE_PROJECT_ID`
   is set, the Firestore adapter is used; otherwise an in-memory store is used.
-  The process now collects one labelled mock/replay snapshot on startup and
-  writes it to the configured store.
+  The process collects live market snapshots from the configured provider and
+  writes them to the configured store.
 
 ### Phase 9 - Backtesting Engine & Performance Evaluation
 
@@ -158,13 +160,34 @@ constituting the full specification of the Indian Market Intelligence & Options 
 
 - Interactive Telegram command handler (`/status`, `/signals`, `/nifty`, `/banknifty`, `/options`, `/vix`, `/watchlist`, `/papertrades`, `/performance`, `/analysis`).
 - Proactive formatted alert dispatchers (`notify_market_open`, `notify_signal`, `notify_exit`, `notify_daily_report`, `notify_options_summary`).
-- Fail-soft HTTP and mock Telegram client ensuring notifications never crash trading pipelines.
+- Fail-soft HTTP Telegram client ensuring notifications never crash trading pipelines.
 
 ### Phase 14 - Always-On Runtime, Scheduler & End-to-End Pipeline
 
 - `MarketSessionScheduler` managing IST market session awareness (pre-open, regular, post-market, closed).
 - `MarketIntelligencePipeline` wiring data collection, validation gating, technical analysis, options intelligence, regime detection, strategy scoring, risk assessment, paper execution, Gemini reasoning, and Telegram alerts into a single unified cycle.
 - Graceful daemon lifecycle with signal handling (`SIGINT`, `SIGTERM`), CLI flags (`--daemon`, `--print-config`), and 100% test coverage across 218 unit and integration tests.
+
+### Phase 16 - Trade Brief Companion (present-moment decision support)
+
+- `TradeAdvisor` fuses the best risk-approved signal, the live option chain,
+  and the risk-engine sizing into one human answer per symbol per cycle:
+  **BUY** (with the exact contract, e.g. `NIFTY 24750CE`), or an explicit
+  **WAIT** with the concrete reason. Standing aside is a first-class
+  recommendation.
+- LONG view maps to the nearest-ATM CALL, SHORT to the nearest-ATM PUT
+  (`advisor.strike_offset` moves further OTM). Index-level risk/reward is
+  translated into premium space using the contract delta, with a
+  premium/spot-ratio fallback that is flagged as a warning on the brief.
+- Briefs carry premium entry/stop/targets, lots, risk and reward in INR, net
+  EV after costs, score, regime, OI context, spread/IV warnings, and a
+  validity window (`advisor.validity_minutes`).
+- Persistence: `tradeBriefs/current_<SYMBOL>` is refreshed every cycle for the
+  dashboard; history rows are written only when the actionable setup changes
+  so fast daemon cycles do not flood Firestore.
+- Telegram: `notify_trade_brief` pushes a new brief once per setup, suppressed
+  for `advisor.telegram_dedupe_minutes` — no 5-second alert spam.
+- No auto-execution anywhere: the human reads the brief and bids manually.
 
 ---
 
@@ -218,6 +241,8 @@ all other settings   | config/*.yaml    | sessions, instruments, risk, costs
 
 Environment overrides are declaratively mapped in `ENV_OVERRIDES`
 (`app/config/settings.py`), e.g. `DATA_PROVIDER -> provider.name`,
+`INDSTOCKS_ACCESS_TOKEN -> provider.params.access_token`,
+`DAEMON_INTERVAL_SECONDS -> orchestration.daemon_interval_seconds`,
 `FIREBASE_PROJECT_ID -> firestore.project_id`.
 
 ---
@@ -240,7 +265,7 @@ python -m app.main --print-config    # just verify the effective config
 # To write to Firestore, set FIREBASE_PROJECT_ID and FIREBASE_CREDENTIALS_PATH
 # in `.env` (service-account JSON). Collections used: marketSnapshots,
 # optionSnapshots, signals, marketRegimes, riskAssessments, riskState,
-# systemEvents.
+# systemEvents, tradeBriefs.
 
 # 3) run the test suite
 python -m pytest -q
@@ -263,7 +288,7 @@ python -m pytest -q
 - **Models**: OHLC invariants, bid â‰¤ ask, positive strikes, zero/negative
   rejection, tz-aware enforcement, UTCâ†’IST canonicalisation, option-chain
   expiry ordering, PCR math, option key derivation.
-- **Market data**: mock provider contracts, normalizers, data-quality reports,
+- **Market data**: live provider contracts, normalizers, data-quality reports,
   and collector failure handling.
 - **Technical/options analysis**: deterministic indicators, market structure,
   Black-Scholes pricing, Greeks, IV, OI summaries, and strike-level option
@@ -288,7 +313,7 @@ paper-trading lifecycle tests, Gemini safety tests, and Telegram command tests.
 | Phase | Focus | Evidence gate |
 | ----- | ----- | ------------- |
 | **1** done | Foundation: config, models, logging, runner | config/model/runner tests |
-| **2** done | Market data: provider abstraction, mock/replay, normalisation, DQ validator | provider/normalizer/validator/collector tests |
+| **2** done | Market data: provider abstraction, live NSE/INDstocks feeds, normalisation, DQ validator | provider/normalizer/validator/collector tests |
 | **3** done | Firestore repository + snapshot storage | repository factory and memory repository tests; Firestore adapter is dependency-gated |
 | **4** done | Technical analysis: indicators, market structure | indicator/analyzer tests |
 | **5** done | Options analysis: chain, OI, PCR, IV, Greeks, structure | pricing/Greeks/IV/OI/strike analysis tests |
@@ -302,18 +327,38 @@ paper-trading lifecycle tests, Gemini safety tests, and Telegram command tests.
 | 13 done | Telegram commands + alerts | command tests with mocked Bot API |
 | 14 done | Always-on runtime: scheduler, recovery, monitoring | graceful-failure tests |
 | 15 done | Real-time Web Dashboard & Netlify Deployment | React + Tailwind + Firestore onSnapshot live monitoring |
+| 16 done | Trade Brief companion: present-moment BUY/WAIT guidance on the exact option contract | advisor unit tests + pipeline integration test |
 
 ---
 
 ## Web Dashboard
 
-The web interface is located in `web/` and connects directly to your Firebase Firestore database (`marketagent-9ea8f`) to display real-time market snapshots, option chains, regime classifications, strategy signals, and Gemini AI analysis.
+The web interface is located in `web/` and connects directly to your Firebase Firestore database (`marketagent-9ea8f`) to display market snapshots, option chains, regime classifications, strategy signals, and Gemini AI analysis using live Firestore subscriptions.
 
-### Running Locally
+The **Trade Brief card** at the top of the Overview tab is the companion answer: the exact option contract to bid (or an explicit WAIT), premium entry/stop/targets, lots, R:R, net EV, and the reasoning — refreshed live from `tradeBriefs/current_<SYMBOL>`.
+
+> **Important:** The dashboard only displays data written by the backend agent to Firestore. Run the live agent (below) to see real, continuously-refreshed data.
+
+### 1. Run the live agent (real-time data feed)
+Start the always-on agent that fetches live market data and persists it to Firestore for the dashboard:
+```powershell
+# In .env set:
+#   DATA_PROVIDER=indstocks
+#   INDSTOCKS_ACCESS_TOKEN=<your 24h token from indstocks.com/app/api-trading/access-tokens>
+.\scripts\run_live.ps1
+```
+This runs `python -m app.main --daemon`, which pulls **realtime** quotes (INDstocks WebSocket + REST), option chains, VIX/breadth (via NSE fallback), classifies the market regime, runs Gemini analysis, and persists everything to Firestore during NSE trading hours every **5 seconds** by default. Keep the terminal open.
+
+**Data providers:** `indstocks` (recommended — free realtime API, needs INDstocks account + KYC + access token), `nse` (public NSE scrape, no auth).
+
+### 2. Launch the dashboard locally
+In a second terminal:
 ```powershell
 cd web
 npm run dev
 ```
+Open **http://localhost:3000**.
+The dashboard auto-updates in real time via Firestore `onSnapshot` listeners.
 
 ### Deploying to Netlify
 1. Connect your repository to **[Netlify](https://app.netlify.com/)**.
@@ -330,11 +375,13 @@ npm run dev
   paper-trading, and alerting.
 - **`NO_TRADE` is a successful outcome**; the system optimises for quality of
   trades over quantity.
+- **No auto-execution, ever.** The agent produces briefs, signals, paper trades
+  and alerts; the human places every order manually in their broker app.
 - No strategy is assumed profitable because a backtest looks good. Profitability
   must be demonstrated: positive expectancy, positive profit factor, controlled
   drawdown, out-of-sample results, walk-forward stability, realistic
   transaction costs, across multiple regimes.
-- No fabricated results: unavailable external data degrades to an explicitly
-  labelled mock/replay provider for development and testing only.
+- No fabricated results: if live market data is unavailable, the pipeline records
+  explicit data-quality failures rather than inventing prices or signals.
 
 *This software is for research and education. Nothing here is financial advice.*

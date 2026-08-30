@@ -232,16 +232,19 @@ class TestOptionsChain:
         assert call.is_call is True
         assert put.is_put is True
 
-    def test_entry_rejects_crossed_market(self):
-        with pytest.raises(ValidationError):
-            OptionChainEntry(
-                strike=24000,
-                option_type=OptionType.CALL,
-                expiry_date=_aware_ist(day=30, hour=15, minute=30),
-                open_interest=0,
-                bid=12.0,
-                ask=11.0,
-            )
+    def test_entry_reconciles_crossed_market(self):
+        # Real feeds occasionally emit inverted bid/ask ticks; the model
+        # reconciles them (ask clamped to bid) instead of rejecting.
+        entry = OptionChainEntry(
+            strike=24000,
+            option_type=OptionType.CALL,
+            expiry_date=_aware_ist(day=30, hour=15, minute=30),
+            open_interest=0,
+            bid=12.0,
+            ask=11.0,
+        )
+        assert entry.bid == 12.0
+        assert entry.ask == 12.0
 
     def test_snapshot_requires_expiry_after_snapshot(self):
         now = _aware_ist(hour=10)

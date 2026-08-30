@@ -82,3 +82,8 @@ class TelegramNotifier:
     def notify_options_summary(self, metrics: OptionMetrics) -> bool:
         text = format_options_summary(metrics)
         return self.client.send_message(text)
+
+    def notify_trade_brief(self, brief: TradeBrief) -> bool:
+        """Push a present-moment trade brief (actionable or WAIT)."""
+        text = format_trade_brief(brief)
+        return self.client.send_message(text)

@@ -29,6 +29,7 @@ def collection_for(model_name: str) -> str:
         "GeminiAnalysis": "geminiAnalyses",
         "Alert": "alerts",
         "SystemEvent": "systemEvents",
+        "TradeBrief": "tradeBriefs",
     }
     return mapping.get(model_name, f"{model_name.lower()}s")
 

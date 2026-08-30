@@ -10,8 +10,20 @@ interface OptionsAnalyticsProps {
 export const OptionsAnalytics: React.FC<OptionsAnalyticsProps> = ({ chain, symbol }) => {
   const [filterMoneyness, setFilterMoneyness] = useState<'all' | 'near'>('near');
 
-  const spot = chain?.spot_price || (symbol === 'NIFTY' ? 24825.4 : 52340.2);
+  const spot = chain?.spot_price ?? null;
   const entries = chain?.entries || [];
+
+  if (!chain || spot == null || entries.length === 0) {
+    return (
+      <div className="glass-panel rounded-2xl p-8 border border-slate-800 bg-[#0f172a]/70 flex flex-col items-center justify-center text-center min-h-[220px]">
+        <BarChart3 className="w-8 h-8 text-sky-400/60 mb-2" />
+        <h3 className="text-sm font-semibold text-slate-200">Awaiting live option chain</h3>
+        <p className="text-xs text-slate-400 mt-1 max-w-md">
+          No option chain data for {symbol} yet. Start the backend agent to fetch live OI from the configured provider.
+        </p>
+      </div>
+    );
+  }
 
   // Group by strike
   const strikesMap = new Map<number, { strike: number; call?: OptionEntry; put?: OptionEntry }>();
@@ -48,7 +60,7 @@ export const OptionsAnalytics: React.FC<OptionsAnalyticsProps> = ({ chain, symbo
     }
   });
 
-  const pcr = totalCallOi > 0 ? totalPutOi / totalCallOi : 1.15;
+  const pcr = totalCallOi > 0 ? totalPutOi / totalCallOi : 0;
   const pcrSentiment = pcr > 1.2 ? 'Bullish Support' : pcr < 0.8 ? 'Bearish Resistance' : 'Neutral Balance';
 
   // Filter strikes if near
@@ -100,7 +112,7 @@ export const OptionsAnalytics: React.FC<OptionsAnalyticsProps> = ({ chain, symbo
           <div>
             <div className="text-[11px] text-rose-400 font-medium">Call Resistance (Max Call OI)</div>
             <div className="text-xl font-extrabold text-rose-400 mono-num mt-0.5">
-              {(maxCallStrike || 25000).toLocaleString('en-IN')}
+              {(maxCallStrike || 0).toLocaleString('en-IN')}
             </div>
           </div>
           <div className="text-right text-[11px] text-slate-400 mono-num">

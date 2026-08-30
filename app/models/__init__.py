@@ -44,6 +44,7 @@ from app.models.backtesting import (
     WalkForwardResult,
 )
 from app.models.ai import Contradiction, GeminiAnalysis, NewsItem
+from app.models.advisor import OptionContractRef, TradeBrief
 from app.models.paper_trading import PaperPosition, PaperTradeOrder
 from app.models.risk import (
     CostBreakdown,
@@ -107,6 +108,8 @@ __all__ = [
     "SystemEvent",
     "SystemEventType",
     "TechnicalIndicators",
+    "OptionContractRef",
+    "TradeBrief",
     "TradeResult",
     "TradeStage",
     "UTC",

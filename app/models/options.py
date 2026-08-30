@@ -23,10 +23,10 @@ class OptionChainEntry(BaseModel):
     open_interest: int = Field(default=0, ge=0)
     change_in_oi: int | None = None
     price_change_pct: float | None = None
-    last_price: float | None = Field(default=None, gt=0)
-    bid: float | None = Field(default=None, gt=0)
-    ask: float | None = Field(default=None, gt=0)
-    iv: float | None = Field(default=None, gt=0)
+    last_price: float | None = Field(default=None, ge=0)
+    bid: float | None = Field(default=None, ge=0)
+    ask: float | None = Field(default=None, ge=0)
+    iv: float | None = Field(default=None, ge=0)
     delta: float | None = None
     gamma: float | None = None
     theta: float | None = None
@@ -36,7 +36,8 @@ class OptionChainEntry(BaseModel):
     def _finish(self) -> "OptionChainEntry":
         self.expiry_date = ensure_ist(self.expiry_date)
         if self.bid is not None and self.ask is not None and self.bid > self.ask:
-            raise ValueError(f"bid ({self.bid}) must be <= ask ({self.ask})")
+            # Reconcile inverted spread from feed anomaly
+            self.ask = self.bid
         return self
 
     @property

@@ -36,6 +36,7 @@ COLLECTIONS = tuple(
         "systemEvents",
         "riskAssessments",
         "riskState",
+        "tradeBriefs",
     ]
 )
 

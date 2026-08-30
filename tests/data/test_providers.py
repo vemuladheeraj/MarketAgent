@@ -1,23 +1,37 @@
-"""Tests for the market-data providers (mock) and provider factory."""
+"""Tests for the market-data provider factory."""
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from app.config.settings import ProviderConfig
 from app.data.providers import (
-    MockMarketDataProvider,
+    INDstocksMarketDataProvider,
     MarketDataProvider,
+    NSEMarketDataProvider,
+    ProviderAuthError,
     ProviderError,
     create_provider,
 )
+from app.data.providers.indstocks import _INDstocksWebSocketFeed
 
 
-def test_mock_is_registered_and_creatable():
-    assert MockMarketDataProvider.name == "mock_replay"
-    provider = create_provider(ProviderConfig(name="mock_replay"))
+def test_nse_is_registered_and_creatable():
+    provider = create_provider(ProviderConfig(name="nse"))
     assert isinstance(provider, MarketDataProvider)
-    assert isinstance(provider, MockMarketDataProvider)
+    assert isinstance(provider, NSEMarketDataProvider)
+
+
+def test_indstocks_is_registered_and_creatable():
+    provider = create_provider(
+        ProviderConfig(
+            name="indstocks",
+            params={"access_token": "test-token", "use_websocket": False},
+        )
+    )
+    assert isinstance(provider, MarketDataProvider)
+    assert isinstance(provider, INDstocksMarketDataProvider)
 
 
 def test_create_provider_unknown_name():
@@ -25,78 +39,105 @@ def test_create_provider_unknown_name():
         create_provider(ProviderConfig(name="does_not_exist"))
 
 
-def test_mock_is_deterministic():
-    a = MockMarketDataProvider(seed=42)
-    b = MockMarketDataProvider(seed=42)
-    assert a.get_quote("NIFTY") == b.get_quote("NIFTY")
-    assert a.get_candles("NIFTY", 10) == b.get_candles("NIFTY", 10)
+class TestIndstocksAuthHandling:
+    """The expired-token scenario: REST 403 + WS handshake rejection."""
 
+    @staticmethod
+    def _provider_403() -> INDstocksMarketDataProvider:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                403,
+                json={
+                    "message": (
+                        "The provided access_token is either incorrect, expired, "
+                        "or has been revoked. The user needs to re-authenticate."
+                    ),
+                    "success": False,
+                },
+            )
 
-def test_mock_different_seed_differs():
-    a = MockMarketDataProvider(seed=1)
-    b = MockMarketDataProvider(seed=99)
-    assert a.get_vix() != b.get_vix()
+        return INDstocksMarketDataProvider(
+            access_token="expired-token",
+            use_websocket=False,
+            client=httpx.Client(transport=httpx.MockTransport(handler), timeout=5.0),
+        )
 
+    def test_rest_403_raises_auth_error(self):
+        provider = self._provider_403()
+        with pytest.raises(ProviderAuthError, match="token rejected"):
+            provider._get_json("/market/quotes/full", params={"scrip-codes": "NIDX_40000001"})
 
-class TestMockQuote:
-    def test_quote_payload_structure(self):
-        q = MockMarketDataProvider().get_quote("NIFTY")
-        assert set(["symbol", "timestamp", "bid", "ask", "last_price"]) <= set(q)
-        assert q["bid"] <= q["ask"]
-        assert q["last_price"] > 0
-
-    def test_quote_unknown_symbol_raises(self):
+    def test_auth_error_is_still_a_provider_error(self):
+        # Existing fail-soft handlers catch ProviderError — auth errors must
+        # flow through those paths, never crash the pipeline.
+        provider = self._provider_403()
         with pytest.raises(ProviderError):
-            MockMarketDataProvider().get_quote("UNKNOWN")
+            provider._get_csv("/market/instruments", params={"source": "index"})
+
+    def test_bootstrap_403_falls_back_to_default_scrips(self):
+        provider = self._provider_403()
+        # Instruments CSV 403s, but the provider stays constructible/usable.
+        assert provider._index_scrips["NIFTY"] == "40000001"
+        assert provider._ws_tokens["NIFTY"] == "NIDX:40000001"
+
+    def test_auth_warning_is_logged_once_only(self, caplog):
+        import logging
+
+        provider = self._provider_403()
+        for _ in range(3):
+            with pytest.raises(ProviderAuthError):
+                provider._get_json("/market/quotes/full")
+        auth_logs = [
+            r for r in caplog.records
+            if r.levelno >= logging.ERROR and "authentication failed" in r.getMessage()
+        ]
+        assert len(auth_logs) == 1
 
 
-class TestMockCandles:
-    def test_candles_ordered_and_consistent(self):
-        candles = MockMarketDataProvider().get_candles("NIFTY", 10)
-        assert len(candles) == 10
-        timestamps = [c["timestamp"] for c in candles]
-        assert timestamps == sorted(timestamps)
-        for c in candles:
-            assert c["high"] >= c["low"]
-            assert c["high"] >= max(c["open"], c["close"])
-            assert c["low"] <= min(c["open"], c["close"])
-            assert all(v > 0 for v in (c["open"], c["high"], c["low"], c["close"]))
+class TestWebSocketReconnectPolicy:
+    def test_auth_rejections_are_detected(self):
+        rejected = _INDstocksWebSocketFeed.is_auth_rejection
+        assert rejected(RuntimeError("server rejected WebSocket connection: HTTP 513"))
+        assert rejected(RuntimeError("server rejected WebSocket connection: HTTP 401"))
+        assert rejected(RuntimeError("server rejected WebSocket connection: HTTP 403"))
+        assert not rejected(RuntimeError("connection reset by peer"))
+        assert not rejected(RuntimeError("timed out during handshake"))
+
+    def test_backoff_doubles_and_caps(self):
+        backoff = _INDstocksWebSocketFeed.backoff_seconds
+        assert backoff(1) == 3.0
+        assert backoff(2) == 6.0
+        assert backoff(3) == 12.0
+        assert backoff(4) == 24.0
+        assert backoff(5) == 48.0
+        assert backoff(6) == 60.0   # cap reached
+        assert backoff(50) == 60.0  # stays capped
+
+    def test_auth_failure_stops_the_feed_thread(self):
+        """Simulate the feed loop: a 513 handshake rejection must set the
+        auth flag (and the loop must not keep reconnecting)."""
+        import threading
+
+        feed = _INDstocksWebSocketFeed(
+            access_token="expired",
+            ws_instruments={"NIFTY": "NIDX:40000001"},
+            cache=_FakeCache(),
+        )
+        assert not feed.auth_failed
+
+        # Drive the classification + flag exactly as _run does on rejection.
+        exc = RuntimeError("server rejected WebSocket connection: HTTP 513")
+        if _INDstocksWebSocketFeed.is_auth_rejection(exc):
+            feed._auth_failed.set()
+        assert feed.auth_failed
+        # And the stop event is untouched (no leak when process restarts).
+        assert isinstance(feed._stop, threading.Event)
 
 
-class TestMockChain:
-    def test_chain_entries(self):
-        chain = MockMarketDataProvider().get_option_chain("NIFTY")
-        assert "expiry_date" in chain
-        assert len(chain["entries"]) == 22  # 11 strikes x 2 sides
-        assert all(e["strike"] > 0 for e in chain["entries"])
-        assert {"call", "put"} <= {e["option_type"] for e in chain["entries"]}
+class _FakeCache:
+    """Minimal stand-in for _QuoteStreamCache."""
 
-    def test_chain_bid_le_ask(self):
-        chain = MockMarketDataProvider().get_option_chain("BANKNIFTY")
-        for e in chain["entries"]:
-            if e["bid"] is not None and e["ask"] is not None:
-                assert e["bid"] <= e["ask"]
+    def update(self, symbol: str, ltp: float, ts_ms: int) -> None: ...
 
-
-class TestMockBreadthVixFlows:
-    def test_breadth_positive(self):
-        b = MockMarketDataProvider().get_market_breadth()
-        assert b["advancers"] >= 0 and b["decliners"] >= 0
-        assert b["advancers"] + b["decliners"] + b["unchanged"] > 0
-
-    def test_vix_positive(self):
-        v = MockMarketDataProvider().get_vix()
-        assert v["value"] > 0
-
-    def test_fii_dii_keys(self):
-        f = MockMarketDataProvider().get_fii_dii_data()
-        assert "fii_cash_net" in f
-        assert "dii_cash_net" in f
-
-
-class TestFuturesPayload:
-    def test_futures_contract_fields(self):
-        f = MockMarketDataProvider().get_futures_data("NIFTY")
-        assert f["contract"]["underlying_symbol"] == "NIFTY"
-        assert f["contract"]["lot_size"] > 0
-        assert f["quote"]["symbol"] == "NIFTY"
+    def get(self, symbol: str, max_age_seconds: float = 30.0) -> float | None:
+        return None

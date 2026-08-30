@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.models.backtesting import StrategyPerformance
+from app.models.advisor import TradeBrief
 from app.models.enums import Direction
 from app.models.options_analysis import OptionMetrics
 from app.models.paper_trading import PaperPosition
@@ -129,3 +130,69 @@ def format_options_summary(metrics: OptionMetrics) -> str:
         f"• *Put Support Strike*: `{sup_str}`\n"
         f"• *Expiry*: `{metrics.expiry_date.strftime('%d-%b-%Y')}`"
     )
+
+
+def format_trade_brief(brief: TradeBrief) -> str:
+    """Format a present-moment trade brief for Telegram."""
+    stamp = brief.generated_at.strftime("%d-%b %H:%M")
+    valid = brief.valid_until.strftime("%H:%M")
+
+    if brief.action == "WAIT":
+        lines = [
+            f"⏸ *TRADE BRIEF — WAIT* ({brief.underlying_symbol})",
+            f"🕒 {stamp} IST • valid until {valid}",
+            "",
+            f"• *Why wait*: {brief.waiting_reason}",
+        ]
+        lines.extend(f"• {b}" for b in brief.rationale[:4])
+        lines.append("")
+        lines.append("🧭 _Decision support only — you place the trade._")
+        return "\n".join(lines)
+
+    contract = brief.contract
+    name = contract.tradingsymbol if contract is not None else brief.underlying_symbol
+    arrow = "🟢 BUY" if brief.action == "BUY" else "🔴 SELL"
+    bias = (
+        f" ({brief.underlying_direction.value.upper()} view)"
+        if brief.underlying_direction is not None
+        else ""
+    )
+    targets_str = " / ".join(f"₹{t:.1f}" for t in brief.targets)
+    lots_str = (
+        f"{brief.lots} lot(s)" if brief.lots is not None else "size n/a"
+    )
+    rr_str = f"{brief.risk_reward:.2f}" if brief.risk_reward is not None else "n/a"
+    ev_str = (
+        f"₹{brief.net_expected_value:,.0f}"
+        if brief.net_expected_value is not None
+        else "n/a"
+    )
+    score_str = f"{brief.score:.0f}/100" if brief.score is not None else "n/a"
+    spot_str = f"{brief.spot:.1f}" if brief.spot is not None else "n/a"
+
+    lines = [
+        f"🎯 *TRADE BRIEF — {arrow} {name}*{bias}",
+        f"🕒 {stamp} IST • valid until {valid}",
+        "",
+        f"• *Spot*: `{spot_str}`",
+        f"• *Entry*: `₹{brief.entry:.2f}`",
+        f"• *Stop*: `₹{brief.stop_loss:.2f}`",
+        f"• *Targets*: `{targets_str}`",
+        f"• *Size*: `{lots_str}`",
+        f"• *R:R*: `{rr_str}` • *Net EV*: `{ev_str}` • *Score*: `{score_str}`",
+        f"• *Strategy*: `{brief.strategy_name}` "
+        f"• *Regime*: `{brief.regime or 'n/a'}`",
+        "",
+        "*Why now:*",
+    ]
+    lines.extend(f"• {b}" for b in brief.rationale[:5])
+    if brief.warnings:
+        lines.append("")
+        lines.append("⚠️ *Watch-outs:*")
+        lines.extend(f"• {w}" for w in brief.warnings[:3])
+    lines.append("")
+    lines.append(
+        "🧭 _Decision support only — no auto-execution. "
+        "Verify the live premium before bidding._"
+    )
+    return "\n".join(lines)

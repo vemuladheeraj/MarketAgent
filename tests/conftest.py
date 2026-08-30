@@ -30,7 +30,7 @@ def default_settings() -> Settings:
     """Settings loaded from the checked-in ``config/default.yaml``."""
     return load_settings(
         config_path=DEFAULT_CONFIG_PATH,
-        overrides={"provider.name": "mock_replay"},
+        overrides={"provider.name": "nse", "provider.params": {}},
         environ={},
     )
 
@@ -40,6 +40,6 @@ def fresh_settings() -> Settings:
     """Per-test fresh copy of the default settings (env-isolated)."""
     return load_settings(
         config_path=DEFAULT_CONFIG_PATH,
-        overrides={"provider.name": "mock_replay"},
+        overrides={"provider.name": "nse", "provider.params": {}},
         environ={},
     )

@@ -80,7 +80,10 @@ def run(argv: list[str] | None = None) -> int:
     context.logger.info("READY MSG=market intelligence agent initialized")
 
     if args.daemon:
-        app.run_daemon(context)
+        app.run_daemon(
+            context,
+            interval_seconds=settings.orchestration.daemon_interval_seconds,
+        )
     else:
         app.run_cycle(context)
 

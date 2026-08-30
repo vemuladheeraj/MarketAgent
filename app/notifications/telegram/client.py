@@ -1,4 +1,4 @@
-"""Telegram Bot API client with fail-soft and mock offline support."""
+"""Telegram Bot API client with fail-soft offline support."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ class TelegramClient:
         self._sent_messages.append(msg_record)
 
         if not self.config.bot_token or not target_chat:
-            self._logger.debug("Telegram offline/mock mode: %s", text[:80])
+            self._logger.debug("Telegram offline mode (no token/chat): %s", text[:80])
             return True
 
         # Send via HTTP request

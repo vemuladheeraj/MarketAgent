@@ -6,11 +6,11 @@ from datetime import datetime, timedelta
 
 from app.config.settings import DataQualityConfig, TradingSession
 from app.data.normalizers import MarketDataNormalizer
-from app.data.providers import MockMarketDataProvider
 from app.data.validators import MarketDataValidator
 from app.models import MarketCandle, MarketQuote
 from app.models.enums import DataQuality
 from app.models.time import IST
+from tests.fixtures.provider_payloads import sample_option_chain, sample_quote
 
 NORMALIZER = MarketDataNormalizer()
 VALIDATOR = MarketDataValidator(DataQualityConfig(max_staleness_seconds=300))
@@ -24,7 +24,7 @@ SESSIONS = {"eq": TradingSession(start="09:15", end="15:30", days=[0, 1, 2, 3, 4
 
 
 def _quote(ts: datetime | None = None) -> MarketQuote:
-    raw = MockMarketDataProvider().get_quote("NIFTY")
+    raw = sample_quote("NIFTY")
     q = NORMALIZER.normalize_quote(raw, "NIFTY")
     q.timestamp = ts or nowist()
     return q
@@ -82,14 +82,14 @@ class TestCandleValidator:
 
 class TestChainValidator:
     def test_valid_chain_no_invalid(self):
-        raw = MockMarketDataProvider().get_option_chain("NIFTY")
+        raw = sample_option_chain("NIFTY")
         chain = NORMALIZER.normalize_chain(raw)
         report = VALIDATOR.validate_chain(chain, now=nowist())
         assert report.status in (DataQuality.VALID, DataQuality.WARNING)
         assert not report.invalid
 
     def test_expired_chain_invalid(self):
-        raw = MockMarketDataProvider().get_option_chain("NIFTY")
+        raw = sample_option_chain("NIFTY")
         chain = NORMALIZER.normalize_chain(raw)
         chain.timestamp = chain.expiry_date + timedelta(hours=1)
         report = VALIDATOR.validate_chain(chain, now=nowist())
@@ -97,7 +97,7 @@ class TestChainValidator:
         assert any(i.code == "expired_chain" for i in report.issues)
 
     def test_empty_chain_warns(self):
-        raw = MockMarketDataProvider().get_option_chain("NIFTY")
+        raw = sample_option_chain("NIFTY")
         chain = NORMALIZER.normalize_chain(raw)
         chain.entries = []
         report = VALIDATOR.validate_chain(chain, now=nowist())

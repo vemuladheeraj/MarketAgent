@@ -35,10 +35,17 @@ market:
 
 # ------------------------- Data provider --------------------------
 provider:
-  name: "nse"                  # Available: nse | mock_replay
+  name: "indstocks"            # Available: indstocks | nse
   base_url: ""
   timeout_seconds: 10
-  params: {}
+  params:
+    use_websocket: true        # background WebSocket LTP feed (realtime)
+    strike_count: 20           # strikes per side for option chain
+    cache_ttl_seconds: 1       # short REST cache; WS keeps LTP fresh
+
+# ----------------------- Orchestration loop -----------------------
+orchestration:
+  daemon_interval_seconds: 5   # pipeline poll interval during market hours
 
 # --------------------------- Persistence --------------------------
 firestore:
@@ -118,6 +125,17 @@ signal:
     watch: 60
     weak: 50
     no_trade: 0
+
+# ------------------------- Trade advisor ----------------------------
+# Present-moment companion layer: turns the best accepted signal into a
+# concrete option-contract brief for manual execution (BUY/WAIT).
+advisor:
+  enabled: true
+  min_score: 70                 # briefs require a risk-approved signal at/above this score
+  strike_offset: 0              # 0 = nearest-ATM strike, 1 = one strike further OTM
+  max_premium_spread_pct: 5.0   # warn when (ask-bid)/mid exceeds this
+  validity_minutes: 10          # a brief is stale after this many minutes
+  telegram_dedupe_minutes: 15   # suppress repeat alerts for the same setup
 
 # ------------------------- Strategies -------------------------------
 strategies:

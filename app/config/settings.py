@@ -40,6 +40,8 @@ ENV_OVERRIDES: dict[str, tuple[str, ...]] = {
     "APP_LOG_LEVEL": ("logging", "level"),
     "DATA_PROVIDER": ("provider", "name"),
     "DATA_PROVIDER_BASE_URL": ("provider", "base_url"),
+    "INDSTOCKS_ACCESS_TOKEN": ("provider", "params", "access_token"),
+    "DAEMON_INTERVAL_SECONDS": ("orchestration", "daemon_interval_seconds"),
     "FIREBASE_PROJECT_ID": ("firestore", "project_id"),
     "FIREBASE_CREDENTIALS_PATH": ("firestore", "credentials_path"),
     "FIRESTORE_DATABASE": ("firestore", "database"),
@@ -106,10 +108,16 @@ class MarketConfig(BaseModel):
 
 
 class ProviderConfig(BaseModel):
-    name: str = "mock_replay"
+    name: str = "nse"
     base_url: str = ""
     timeout_seconds: float = Field(default=10.0, gt=0)
     params: dict[str, Any] = Field(default_factory=dict)
+
+
+class OrchestrationConfig(BaseModel):
+    """Daemon loop tuning (poll interval during market hours)."""
+
+    daemon_interval_seconds: float = Field(default=60.0, gt=0)
 
 
 class FirestoreConfig(BaseModel):
@@ -249,6 +257,21 @@ class StrategyConfig(BaseModel):
     params: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
+class AdvisorConfig(BaseModel):
+    """Present-moment trade-brief advisor (the companion layer).
+
+    Turns the best accepted signal into a concrete option-contract brief for
+    manual execution. No order placement happens anywhere in the system.
+    """
+
+    enabled: bool = True
+    min_score: float = Field(default=70.0, ge=0, le=100)
+    strike_offset: int = Field(default=0, ge=0)
+    max_premium_spread_pct: float = Field(default=5.0, gt=0)
+    validity_minutes: int = Field(default=10, ge=1)
+    telegram_dedupe_minutes: int = Field(default=15, ge=0)
+
+
 class LoggingConfig(BaseModel):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     format: str = "%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -262,6 +285,7 @@ class Settings(BaseModel):
     environment: Environment = "development"
     market: MarketConfig
     provider: ProviderConfig = ProviderConfig()
+    orchestration: OrchestrationConfig = OrchestrationConfig()
     firestore: FirestoreConfig = FirestoreConfig()
     gemini: GeminiConfig = GeminiConfig()
     telegram: TelegramConfig = TelegramConfig()
@@ -270,6 +294,7 @@ class Settings(BaseModel):
     data_quality: DataQualityConfig = DataQualityConfig()
     signal: SignalConfig = SignalConfig()
     strategies: StrategyConfig = StrategyConfig()
+    advisor: AdvisorConfig = AdvisorConfig()
     logging: LoggingConfig = LoggingConfig()
 
     # -- convenience -------------------------------------------------

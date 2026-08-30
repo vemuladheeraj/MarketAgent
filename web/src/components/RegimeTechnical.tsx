@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Activity, TrendingUp, TrendingDown, Target, Zap, Sliders } from 'lucide-react';
+import { Layers } from 'lucide-react';
 import { RegimeAssessment, MarketSnapshot } from '../types/market';
 
 interface RegimeTechnicalProps {
@@ -9,8 +9,20 @@ interface RegimeTechnicalProps {
 }
 
 export const RegimeTechnical: React.FC<RegimeTechnicalProps> = ({ regime, snapshot, symbol }) => {
-  const currentRegime = regime?.regime || 'low_volatility';
-  const confidence = Math.round((regime?.confidence || 0.8) * 100);
+  if (!regime) {
+    return (
+      <div className="glass-panel rounded-2xl p-6 border border-slate-800 bg-[#0f172a]/70 flex flex-col items-center justify-center text-center min-h-[220px]">
+        <Layers className="w-8 h-8 text-sky-400/60 mb-2" />
+        <h3 className="text-sm font-semibold text-slate-200">Awaiting regime classification</h3>
+        <p className="text-xs text-slate-400 mt-1 max-w-md">
+          Run the backend agent to compute live market structure and regime for {symbol}.
+        </p>
+      </div>
+    );
+  }
+
+  const currentRegime = regime.regime;
+  const confidence = Math.round((regime.confidence || 0) * 100);
 
   const regimeConfig: Record<string, { label: string; bg: string; text: string; border: string; desc: string }> = {
     strong_uptrend: { label: 'STRONG UPTREND', bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30', desc: 'Powerful institutional buying with multi-timeframe alignment.' },
@@ -26,13 +38,7 @@ export const RegimeTechnical: React.FC<RegimeTechnicalProps> = ({ regime, snapsh
 
   const currentCfg = regimeConfig[currentRegime] || regimeConfig.uncertain;
   const quote = snapshot?.quotes?.[symbol];
-  const spotPrice = quote?.last_price || (symbol === 'NIFTY' ? 24825.4 : 52340.2);
-
-  // Approximate key technical support/resistance levels
-  const step = symbol === 'NIFTY' ? 100 : 200;
-  const pivot = Math.round(spotPrice / step) * step;
-  const r1 = pivot + step;
-  const s1 = pivot - step;
+  const spotPrice = quote?.last_price;
 
   return (
     <div className="glass-panel rounded-2xl p-6 border border-slate-800 bg-[#0f172a]/70">
@@ -53,7 +59,6 @@ export const RegimeTechnical: React.FC<RegimeTechnicalProps> = ({ regime, snapsh
         </div>
       </div>
 
-      {/* Regime Classification Banner */}
       <div className={`p-4 rounded-xl border ${currentCfg.bg} ${currentCfg.border} mb-5`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
@@ -62,54 +67,19 @@ export const RegimeTechnical: React.FC<RegimeTechnicalProps> = ({ regime, snapsh
             </div>
             <p className="text-xs text-slate-300 mt-0.5">{currentCfg.desc}</p>
           </div>
-          <div className="text-[11px] text-slate-300 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800/80 font-mono">
-            {regime?.driver || 'ADX(14)=26.4 > 25, Price > SMA20, Supertrend Bullish'}
-          </div>
+          {regime.driver && (
+            <div className="text-[11px] text-slate-300 bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800/80 font-mono">
+              {regime.driver}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Technical Indicators Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* Support 1 */}
-        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
-          <div className="text-[11px] text-slate-400 flex items-center justify-between">
-            <span>Support 1</span>
-            <span className="text-emerald-400 text-[10px]">S1</span>
-          </div>
-          <div className="text-base font-bold text-emerald-400 mono-num mt-1">{s1.toLocaleString('en-IN')}</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Heavy Put OI Base</div>
+      {spotPrice != null && (
+        <div className="text-xs text-slate-400">
+          Spot reference: <span className="mono-num text-slate-200 font-semibold">{spotPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
         </div>
-
-        {/* Resistance 1 */}
-        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
-          <div className="text-[11px] text-slate-400 flex items-center justify-between">
-            <span>Resistance 1</span>
-            <span className="text-rose-400 text-[10px]">R1</span>
-          </div>
-          <div className="text-base font-bold text-rose-400 mono-num mt-1">{r1.toLocaleString('en-IN')}</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Call Strike Supply</div>
-        </div>
-
-        {/* RSI (14) */}
-        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
-          <div className="text-[11px] text-slate-400 flex items-center justify-between">
-            <span>RSI (14)</span>
-            <span className="text-sky-400 text-[10px]">Momentum</span>
-          </div>
-          <div className="text-base font-bold text-sky-300 mono-num mt-1">58.4</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Bullish Bias (40-60)</div>
-        </div>
-
-        {/* Supertrend */}
-        <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800">
-          <div className="text-[11px] text-slate-400 flex items-center justify-between">
-            <span>Supertrend (10,3)</span>
-            <span className="text-emerald-400 text-[10px]">Trend</span>
-          </div>
-          <div className="text-base font-bold text-emerald-400 mono-num mt-1">BULLISH</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Trailing Stop: {(spotPrice * 0.992).toFixed(0)}</div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

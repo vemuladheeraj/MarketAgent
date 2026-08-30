@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Clock, Database, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
+import { Activity, Clock, Database } from 'lucide-react';
 
 interface HeaderProps {
   selectedSymbol: string;
   onSelectSymbol: (sym: string) => void;
   isLive: boolean;
   lastUpdated: string | null;
-  useDemo: boolean;
-  onToggleDemo: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,8 +13,6 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectSymbol,
   isLive,
   lastUpdated,
-  useDemo,
-  onToggleDemo,
 }) => {
   const [istTime, setIstTime] = useState<string>('');
   const [isMarketOpen, setIsMarketOpen] = useState<boolean>(false);
@@ -122,22 +118,14 @@ export const Header: React.FC<HeaderProps> = ({
             }`}
           >
             <Database className="w-3.5 h-3.5" />
-            <span>{isLive ? 'Firestore Synced' : 'marketagent-9ea8f'}</span>
+            <span>{isLive ? 'Firestore Synced' : 'Awaiting live data'}</span>
           </div>
 
-          {/* Fallback Preview Toggle */}
-          <button
-            onClick={onToggleDemo}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-              useDemo
-                ? 'bg-purple-900/40 border-purple-600/60 text-purple-300'
-                : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:text-slate-200'
-            }`}
-            title="Toggle simulated snapshot data"
-          >
-            <Sparkles className="w-3.5 h-3.5 inline mr-1" />
-            {useDemo ? 'Demo Mode: ON' : 'Demo Preview'}
-          </button>
+          {lastUpdated && (
+            <div className="text-[11px] text-slate-400 mono-num">
+              Updated {new Date(lastUpdated).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })} IST
+            </div>
+          )}
         </div>
       </div>
     </header>

@@ -7,6 +7,7 @@ import { OptionsAnalytics } from './components/OptionsAnalytics';
 import { SignalsTable } from './components/SignalsTable';
 import { PaperTrading } from './components/PaperTrading';
 import { EventAuditLog } from './components/EventAuditLog';
+import { TradeBriefCard } from './components/TradeBriefCard';
 
 import {
   subscribeLatestSnapshot,
@@ -15,10 +16,7 @@ import {
   subscribeSignals,
   subscribePaperTrades,
   subscribeSystemEvents,
-  DEMO_SNAPSHOT,
-  DEMO_GEMINI,
-  DEMO_REGIME,
-  DEMO_SIGNALS,
+  subscribeTradeBrief,
 } from './services/firestoreService';
 
 import {
@@ -28,6 +26,7 @@ import {
   Signal,
   PaperTrade,
   SystemEvent,
+  TradeBrief,
 } from './types/market';
 
 import { LayoutDashboard, BarChart2, Zap, Shield, Terminal } from 'lucide-react';
@@ -35,7 +34,6 @@ import { LayoutDashboard, BarChart2, Zap, Shield, Terminal } from 'lucide-react'
 export function App() {
   const [selectedSymbol, setSelectedSymbol] = useState<string>('NIFTY');
   const [activeTab, setActiveTab] = useState<'overview' | 'options' | 'signals' | 'paper' | 'events'>('overview');
-  const [useDemo, setUseDemo] = useState<boolean>(false);
   const [isLive, setIsLive] = useState<boolean>(false);
 
   // Firestore live state
@@ -45,6 +43,7 @@ export function App() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [paperTrades, setPaperTrades] = useState<PaperTrade[]>([]);
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
+  const [tradeBrief, setTradeBrief] = useState<TradeBrief | null>(null);
 
   // Subscriptions lifecycle
   useEffect(() => {
@@ -84,6 +83,9 @@ export function App() {
       if (data && data.length > 0) setSystemEvents(data);
     });
 
+    // 7. Present-moment Trade Brief
+    const unsubBrief = subscribeTradeBrief(selectedSymbol, setTradeBrief);
+
     return () => {
       unsubSnap();
       unsubGemini();
@@ -91,14 +93,14 @@ export function App() {
       unsubSignals();
       unsubTrades();
       unsubEvents();
+      unsubBrief();
     };
   }, [selectedSymbol]);
 
-  // Effective data sources (either live Firestore data or high-quality demo fallback)
-  const currentSnapshot = useDemo ? DEMO_SNAPSHOT : snapshot || DEMO_SNAPSHOT;
-  const currentGemini = useDemo ? DEMO_GEMINI : geminiAnalysis || DEMO_GEMINI;
-  const currentRegime = useDemo ? DEMO_REGIME : regime || DEMO_REGIME;
-  const currentSignals = useDemo || signals.length === 0 ? DEMO_SIGNALS : signals;
+  const currentSnapshot = snapshot;
+  const currentGemini = geminiAnalysis;
+  const currentRegime = regime;
+  const currentSignals = signals;
   const currentChain = currentSnapshot?.option_chains?.[selectedSymbol] || null;
 
   const lastUpdated = currentSnapshot?.timestamp || null;
@@ -111,8 +113,6 @@ export function App() {
         onSelectSymbol={setSelectedSymbol}
         isLive={isLive}
         lastUpdated={lastUpdated}
-        useDemo={useDemo}
-        onToggleDemo={() => setUseDemo(!useDemo)}
       />
 
       {/* Main Content Dashboard */}
@@ -148,6 +148,9 @@ export function App() {
         {/* Tab 1: Overview & AI Hub */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
+            {/* Present-moment Trade Brief (the companion answer) */}
+            <TradeBriefCard brief={tradeBrief} symbol={selectedSymbol} />
+
             {/* Top Market Cards */}
             <MarketOverview symbol={selectedSymbol} snapshot={currentSnapshot} />
 

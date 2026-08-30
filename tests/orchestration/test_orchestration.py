@@ -10,6 +10,7 @@ from app.models.enums import DataQuality
 from app.models.time import IST
 from app.orchestration.runner import MarketAgentApplication
 from app.orchestration.scheduler import MarketSessionScheduler
+from tests.fixtures.nse_stub import make_stub_nse_provider
 
 MARKET_CFG = MarketConfig(
     timezone="Asia/Kolkata",
@@ -51,7 +52,11 @@ class TestMarketSessionScheduler:
 
 
 class TestMarketIntelligencePipeline:
-    def test_full_pipeline_cycle(self, fresh_settings):
+    def test_full_pipeline_cycle(self, fresh_settings, monkeypatch):
+        monkeypatch.setattr(
+            "app.orchestration.runner.create_provider",
+            lambda _config: make_stub_nse_provider(),
+        )
         app = MarketAgentApplication(fresh_settings)
         ctx = app.startup()
         assert ctx.pipeline is not None
@@ -63,11 +68,19 @@ class TestMarketIntelligencePipeline:
         assert "NIFTY" in cycle_result.technicals
         assert "NIFTY" in cycle_result.regimes
         assert "NIFTY" in cycle_result.gemini_analyses
+        assert "NIFTY" in cycle_result.trade_briefs
+        brief = cycle_result.trade_briefs["NIFTY"]
+        assert brief.action in ("BUY", "WAIT")
+        assert ctx.store.load_current_trade_brief("NIFTY") is not None
         assert ctx.store.snapshots.count() >= 1
 
         app.shutdown()
 
-    def test_daemon_loop_cycles(self, fresh_settings):
+    def test_daemon_loop_cycles(self, fresh_settings, monkeypatch):
+        monkeypatch.setattr(
+            "app.orchestration.runner.create_provider",
+            lambda _config: make_stub_nse_provider(),
+        )
         app = MarketAgentApplication(fresh_settings)
         ctx = app.startup()
 

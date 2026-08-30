@@ -16,10 +16,10 @@ from app.analysis.technical.market_structure import (
     support_resistance,
     weekly_high_low,
 )
-from app.data.providers import MockMarketDataProvider
 from app.data.normalizers import MarketDataNormalizer
 from app.models.candle import MarketCandle
 from app.models.time import IST
+from tests.fixtures.provider_payloads import sample_candles
 
 NORMALIZER = MarketDataNormalizer()
 ANALYZER = TechnicalAnalyzer()
@@ -109,7 +109,7 @@ class TestMarketStructure:
 
 class TestTechnicalAnalyzer:
     def _candles(self, n: int = 80) -> list[MarketCandle]:
-        raw = MockMarketDataProvider().get_candles("NIFTY", n)
+        raw = sample_candles("NIFTY", n)
         return NORMALIZER.normalize_candle_list(raw)
 
     def test_analyze_produces_model(self):

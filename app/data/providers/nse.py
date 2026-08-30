@@ -13,6 +13,11 @@ from typing import Any
 
 import httpx
 
+try:
+    from pnsea import NSESession
+except ImportError:
+    NSESession = None
+
 from app.data.providers.base import MarketDataProvider, ProviderError, RawPayload
 from app.logging.setup import get_logger
 from app.models.time import IST, now_ist
@@ -24,7 +29,7 @@ NSE_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
+        "Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0"
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
@@ -88,6 +93,7 @@ class NSEMarketDataProvider(MarketDataProvider):
             timeout=timeout_seconds,
             follow_redirects=True,
         )
+        self._stealth_session = NSESession() if NSESession is not None else None
         self._session_initialized = False
         self._last_cookie_time: float = 0.0
 
@@ -114,13 +120,26 @@ class NSEMarketDataProvider(MarketDataProvider):
         except Exception as exc:
             logger.warning("Failed to initialize NSE session cookies: %s", exc)
 
-    def _get_json(self, path: str, referer: str = "/option-chain") -> dict[str, Any]:
+    def _get_json(self, path: str, referer: str = "/option-chain") -> dict[str, Any] | list[dict[str, Any]]:
         """Fetch JSON payload from NSE endpoint with automatic session management."""
-        self._ensure_session()
-        url = f"{self.base_url}{path}"
+        url = f"{self.base_url}{path}" if path.startswith("/") else path
         headers = dict(NSE_HEADERS)
-        headers["Referer"] = f"{self.base_url}{referer}"
+        headers["Referer"] = f"{self.base_url}{referer}" if referer.startswith("/") else referer
 
+        # 1. Try stealth session first (bypasses Akamai WAF for v3 option chains)
+        if self._stealth_session is not None:
+            try:
+                resp = self._stealth_session.get(url, headers={"Referer": headers["Referer"]})
+                if resp is not None and resp.status_code == 200:
+                    try:
+                        return resp.json()
+                    except Exception as exc:
+                        logger.debug("Failed to decode JSON from stealth session %s: %s", path, exc)
+            except Exception as exc:
+                logger.debug("Stealth session request error for %s: %s", path, exc)
+
+        # 2. Fall back to httpx Client
+        self._ensure_session()
         try:
             resp = self._client.get(url, headers=headers)
             if resp.status_code in (401, 403):
@@ -151,9 +170,11 @@ class NSEMarketDataProvider(MarketDataProvider):
             return self._all_indices_cache.get("data", [])
 
         data = self._get_json("/api/allIndices", referer="/")
-        self._all_indices_cache = data
-        self._all_indices_time = now
-        return data.get("data", [])
+        if isinstance(data, dict):
+            self._all_indices_cache = data
+            self._all_indices_time = now
+            return data.get("data", [])
+        return []
 
     # -- MarketDataProvider Implementation ------------------------------------
 
@@ -202,44 +223,81 @@ class NSEMarketDataProvider(MarketDataProvider):
     def get_option_chain(
         self, symbol: str, expiry_date: datetime | date | None = None
     ) -> RawPayload:
-        """Fetch live option chain with open interest and IV from /api/option-chain-indices."""
+        """Fetch live option chain with open interest and IV from NSE v3 option chain endpoint."""
         sym_upper = symbol.upper().strip()
         info = SYMBOL_MAP.get(sym_upper)
         chain_symbol = info["nse_chain_symbol"] if info else sym_upper
+        is_index = sym_upper in SYMBOL_MAP or "NIFTY" in sym_upper
 
         now = time.monotonic()
-        cached = self._option_chain_cache.get(chain_symbol)
+
+        # 1. Fetch available expiries from contract-info
+        try:
+            contract_info = self._get_json(
+                f"/api/option-chain-contract-info?symbol={chain_symbol}",
+                referer=f"/option-chain?symbol={chain_symbol}",
+            )
+            expiry_dates_str = contract_info.get("expiryDates", []) if isinstance(contract_info, dict) else []
+        except Exception as exc:
+            logger.debug("Failed to fetch contract-info for %s: %s", chain_symbol, exc)
+            expiry_dates_str = []
+
+        if not expiry_dates_str:
+            # Try legacy endpoint format as fallback
+            cached = self._option_chain_cache.get(chain_symbol)
+            if cached and (now - cached[0]) < self.cache_ttl_seconds:
+                payload = cached[1]
+            else:
+                raw_data = self._get_json(
+                    f"/api/option-chain-indices?symbol={chain_symbol}" if is_index else f"/api/option-chain-equities?symbol={chain_symbol}",
+                    referer=f"/option-chain?symbol={chain_symbol}",
+                )
+                payload = raw_data if isinstance(raw_data, dict) else {}
+                self._option_chain_cache[chain_symbol] = (now, payload)
+            records = payload.get("records", {})
+            expiry_dates_str = records.get("expiryDates", [])
+
+        if not expiry_dates_str:
+            raise ProviderError(f"No expiry dates returned by NSE for symbol {symbol!r}")
+
+        # Determine target expiry
+        target_expiry_str = self._resolve_expiry_date(expiry_date, expiry_dates_str)
+
+        # 2. Fetch v3 option chain payload for target expiry
+        cache_key = f"{chain_symbol}_{target_expiry_str}"
+        cached = self._option_chain_cache.get(cache_key)
         if cached and (now - cached[0]) < self.cache_ttl_seconds:
             payload = cached[1]
         else:
+            inst_type = "Indices" if is_index else "Equities"
             raw_data = self._get_json(
-                f"/api/option-chain-indices?symbol={chain_symbol}",
+                f"/api/option-chain-v3?type={inst_type}&symbol={chain_symbol}&expiry={target_expiry_str}",
                 referer=f"/option-chain?symbol={chain_symbol}",
             )
-            payload = raw_data
-            self._option_chain_cache[chain_symbol] = (now, payload)
+            payload = raw_data if isinstance(raw_data, dict) else {}
+            self._option_chain_cache[cache_key] = (now, payload)
 
         records = payload.get("records", {})
-        data_rows = records.get("data", [])
+        filtered_block = payload.get("filtered", {})
+        data_rows = filtered_block.get("data", []) or records.get("data", [])
         if not data_rows:
             raise ProviderError(f"No option chain data returned by NSE for symbol {symbol!r}")
 
         spot_price = float(records.get("underlyingValue", 0.0))
-        expiry_dates_str = records.get("expiryDates", [])
-
-        # Determine target expiry
-        target_expiry_str = self._resolve_expiry_date(expiry_date, expiry_dates_str)
-        target_expiry_dt = self._parse_nse_date(target_expiry_str)
+        if spot_price <= 0.0:
+            try:
+                spot_price = float(self.get_quote(sym_upper)["last_price"])
+            except Exception:
+                pass
 
         entries: list[dict[str, Any]] = []
         for row in data_rows:
-            if row.get("expiryDate") != target_expiry_str:
+            strike = float(row.get("strikePrice", 0.0))
+            if strike <= 0.0:
                 continue
 
-            strike = float(row.get("strikePrice", 0.0))
-
             # Call Option (CE)
-            if "CE" in row:
+            if "CE" in row and row["CE"]:
                 ce = row["CE"]
                 entries.append(
                     {
@@ -247,16 +305,16 @@ class NSEMarketDataProvider(MarketDataProvider):
                         "option_type": "call",
                         "open_interest": int(ce.get("openInterest", 0)),
                         "change_in_oi": int(ce.get("changeinOpenInterest", 0)),
-                        "price_change_pct": float(ce.get("pChange", 0.0)),
+                        "price_change_pct": float(ce.get("pChange", 0.0) or ce.get("PChange", 0.0)),
                         "last_price": float(ce.get("lastPrice", 0.0)),
-                        "bid": float(ce.get("bidprice", 0.0)),
-                        "ask": float(ce.get("askPrice", 0.0)),
-                        "iv": round(float(ce.get("impliedVolatility", 0.0)) / 100.0, 4),
+                        "bid": float(ce.get("buyPrice1", 0.0) or ce.get("bidprice", 0.0) or ce.get("bid", 0.0)),
+                        "ask": float(ce.get("sellPrice1", 0.0) or ce.get("askPrice", 0.0) or ce.get("ask", 0.0)),
+                        "iv": round(float(ce.get("impliedVolatility", 0.0)) / 100.0, 4) if ce.get("impliedVolatility") else 0.0,
                     }
                 )
 
             # Put Option (PE)
-            if "PE" in row:
+            if "PE" in row and row["PE"]:
                 pe = row["PE"]
                 entries.append(
                     {
@@ -264,11 +322,11 @@ class NSEMarketDataProvider(MarketDataProvider):
                         "option_type": "put",
                         "open_interest": int(pe.get("openInterest", 0)),
                         "change_in_oi": int(pe.get("changeinOpenInterest", 0)),
-                        "price_change_pct": float(pe.get("pChange", 0.0)),
+                        "price_change_pct": float(pe.get("pChange", 0.0) or pe.get("PChange", 0.0)),
                         "last_price": float(pe.get("lastPrice", 0.0)),
-                        "bid": float(pe.get("bidprice", 0.0)),
-                        "ask": float(pe.get("askPrice", 0.0)),
-                        "iv": round(float(pe.get("impliedVolatility", 0.0)) / 100.0, 4),
+                        "bid": float(pe.get("buyPrice1", 0.0) or pe.get("bidprice", 0.0) or pe.get("bid", 0.0)),
+                        "ask": float(pe.get("sellPrice1", 0.0) or pe.get("askPrice", 0.0) or pe.get("ask", 0.0)),
+                        "iv": round(float(pe.get("impliedVolatility", 0.0)) / 100.0, 4) if pe.get("impliedVolatility") else 0.0,
                     }
                 )
 
@@ -376,9 +434,36 @@ class NSEMarketDataProvider(MarketDataProvider):
         }
 
     def get_fii_dii_data(self) -> RawPayload:
-        """Provide daily FII/DII flow summary."""
+        """Provide real-time daily FII/DII flow summary from NSE."""
+        now = now_ist()
+        try:
+            items = self._get_json("/api/fiidiiTradeReact", referer="/")
+            if isinstance(items, list) and items:
+                fii_net = 0.0
+                dii_net = 0.0
+                ts = now
+                for item in items:
+                    cat = str(item.get("category", "")).upper()
+                    val = float(item.get("netValue", 0.0))
+                    date_str = item.get("date")
+                    if date_str:
+                        ts = self._parse_nse_datetime(date_str)
+                    if "DII" in cat:
+                        dii_net = val
+                    elif "FII" in cat:
+                        fii_net = val
+                return {
+                    "timestamp": ts.isoformat(),
+                    "fii_cash_net": fii_net,
+                    "dii_cash_net": dii_net,
+                    "fii_index_futures_net": 0.0,
+                    "fii_index_options_net": 0.0,
+                }
+        except Exception as exc:
+            logger.warning("Live FII/DII flow fetch failed: %s", exc)
+
         return {
-            "timestamp": now_ist().isoformat(),
+            "timestamp": now.isoformat(),
             "fii_cash_net": 0.0,
             "dii_cash_net": 0.0,
             "fii_index_futures_net": 0.0,
@@ -392,7 +477,7 @@ class NSEMarketDataProvider(MarketDataProvider):
         if not date_str:
             return now_ist()
         clean = date_str.strip()
-        for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y %H:%M", "%d-%m-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y %H:%M", "%d-%m-%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%d-%b-%Y", "%d-%m-%Y"):
             try:
                 dt = datetime.strptime(clean, fmt)
                 return dt.replace(tzinfo=IST)
@@ -401,9 +486,9 @@ class NSEMarketDataProvider(MarketDataProvider):
         return now_ist()
 
     def _parse_nse_date(self, date_str: str) -> datetime:
-        """Parse NSE date string (e.g. '28-Aug-2025') into IST expiry datetime at 15:30."""
+        """Parse NSE date string (e.g. '28-Aug-2025' or '25-08-2026') into IST expiry datetime at 15:30."""
         clean = date_str.strip()
-        for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+        for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d", "%d-%b-%y", "%d-%m-%y"):
             try:
                 d = datetime.strptime(clean, fmt).date()
                 return datetime.combine(d, datetime.min.time()).replace(
@@ -424,12 +509,13 @@ class NSEMarketDataProvider(MarketDataProvider):
             return available_expiries[0]
 
         target_date = expiry_date.date() if isinstance(expiry_date, datetime) else expiry_date
-        target_str = target_date.strftime("%d-%b-%Y")
+        target_str_1 = target_date.strftime("%d-%b-%Y").upper()
+        target_str_2 = target_date.strftime("%d-%m-%Y").upper()
 
         for exp in available_expiries:
-            if exp.upper() == target_str.upper():
+            exp_upper = exp.upper()
+            if exp_upper in (target_str_1, target_str_2):
                 return exp
-
         # Nearest fallback
         return available_expiries[0]
 

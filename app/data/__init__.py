@@ -5,7 +5,6 @@ from app.data.normalizers import MarketDataNormalizer, NormalizerError
 from app.data.providers import (
     MarketDataProvider,
     ProviderError,
-    MockMarketDataProvider,
     create_provider,
 )
 from app.data.validators import MarketDataValidator
@@ -15,7 +14,6 @@ __all__ = [
     "MarketDataNormalizer",
     "MarketDataProvider",
     "MarketDataValidator",
-    "MockMarketDataProvider",
     "NormalizerError",
     "ProviderError",
     "create_provider",

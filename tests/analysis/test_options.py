@@ -13,20 +13,20 @@ from app.analysis.options import (
     moneyness,
 )
 from app.data.normalizers import MarketDataNormalizer
-from app.data.providers import MockMarketDataProvider
 from app.models import (
     Moneyness,
     OptionType,
     PositionBuild,
 )
 from app.models.time import IST
+from tests.fixtures.provider_payloads import sample_option_chain
 
 NORMALIZER = MarketDataNormalizer()
 ANALYZER = OptionsAnalyzer(risk_free_rate=0.065)
 
 
 def _chain(spot: float = 24000.0):
-    raw = MockMarketDataProvider(base_prices={"NIFTY": spot}).get_option_chain("NIFTY")
+    raw = sample_option_chain("NIFTY", spot=spot)
     return NORMALIZER.normalize_chain(raw)
 
 
