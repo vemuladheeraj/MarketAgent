@@ -25,6 +25,7 @@ from app.strategies.implementations import (
     OpeningRangeBreakoutStrategy,
     SupportResistanceReversalStrategy,
     TrendContinuationStrategy,
+    USSmallCapMomentumBreakoutStrategy,
     VWAPMomentumStrategy,
 )
 
@@ -98,7 +99,29 @@ def test_default_strategy_set_has_nine_named_strategies():
         "mean_reversion",
         "bull_call_spread",
         "bear_put_spread",
+        "covered_call",
+        "cash_secured_put",
+        "iron_condor",
+        "us_small_cap_momentum",
     ]
+
+
+def test_us_small_cap_momentum_breakout_works_for_fast_trending_stocks():
+    strat = USSmallCapMomentumBreakoutStrategy()
+    ctx = _context(
+        MarketRegime.STRONG_UPTREND,
+        close=42.8,
+        sma_20=39.5,
+        atr_14=1.2,
+        rsi_14=68,
+        volume_confirmation=True,
+    )
+    candidate = strat.generate_candidate(ctx)
+    assert candidate is not None
+    assert candidate.direction == Direction.LONG
+    assert candidate.entry == 42.8
+    assert candidate.stop_loss < candidate.entry
+    assert candidate.targets[0] > candidate.entry
 
 
 def test_opening_range_breakout_requires_uptrend_and_break():

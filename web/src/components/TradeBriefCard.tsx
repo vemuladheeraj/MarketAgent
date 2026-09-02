@@ -8,6 +8,7 @@ import {
   PauseCircle,
   ShieldAlert,
   Hourglass,
+  Info,
 } from 'lucide-react';
 import { TradeBrief } from '../types/market';
 
@@ -85,11 +86,15 @@ export const TradeBriefCard: React.FC<TradeBriefCardProps> = ({ brief, symbol })
   const expiryDate = toDate(brief.contract?.expiry_date);
 
   const actionBadge = isWait ? (
-    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold uppercase bg-amber-500/15 text-amber-300 border border-amber-500/40">
+    <span
+      title="WAIT — no setup cleared the score, risk and expected-value gates right now. Standing aside is a deliberate recommendation."
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold uppercase bg-amber-500/15 text-amber-300 border border-amber-500/40"
+    >
       <PauseCircle className="w-4 h-4" /> Stand Aside — Wait
     </span>
   ) : (
     <span
+      title="BUY — the model found a qualifying setup and names one exact contract to buy. It never places the order; you do."
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold uppercase border ${
         isBuy
           ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
@@ -143,7 +148,10 @@ export const TradeBriefCard: React.FC<TradeBriefCardProps> = ({ brief, symbol })
         </div>
         <div className="flex items-center gap-2">
           {brief.score != null && (
-            <span className="px-2.5 py-1 rounded-md text-[10px] font-extrabold border bg-sky-500/15 text-sky-300 border-sky-500/30 mono-num">
+            <span
+              title="SCORE — weighted strength of the underlying strategy signal (0-100). Only strong scores become BUY briefs."
+              className="px-2.5 py-1 rounded-md text-[10px] font-extrabold border bg-sky-500/15 text-sky-300 border-sky-500/30 mono-num"
+            >
               SCORE {brief.score.toFixed(0)}/100
             </span>
           )}
@@ -156,6 +164,13 @@ export const TradeBriefCard: React.FC<TradeBriefCardProps> = ({ brief, symbol })
         <div className="pt-4 space-y-3">
           <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-900/50 text-xs text-amber-200">
             {brief.waiting_reason || 'No qualifying setup at this moment.'}
+          </div>
+          <div className="flex items-start gap-2 text-[11px] text-slate-400">
+            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" />
+            <span>
+              WAIT is a deliberate recommendation, not an error: no setup cleared the score, risk
+              and expected-value gates right now. Not every session produces a trade.
+            </span>
           </div>
           {brief.rationale.length > 0 && (
             <ul className="space-y-1.5">
@@ -188,7 +203,12 @@ export const TradeBriefCard: React.FC<TradeBriefCardProps> = ({ brief, symbol })
             </div>
             {brief.spot != null && (
               <div className="text-right">
-                <div className="text-[10px] text-slate-400 uppercase tracking-wider">Spot</div>
+                <div
+                  title="Spot — the live index level the strike was chosen against (nearest-ATM)."
+                  className="text-[10px] text-slate-400 uppercase tracking-wider"
+                >
+                  Spot
+                </div>
                 <div className="mono-num font-bold text-slate-200">
                   {brief.spot.toFixed(1)}
                 </div>
@@ -196,28 +216,69 @@ export const TradeBriefCard: React.FC<TradeBriefCardProps> = ({ brief, symbol })
             )}
           </div>
 
+          {/* Plain-English translation of the contract call */}
+          <div className="mt-2 p-3 rounded-xl bg-slate-900/60 border border-slate-800/60 text-[11px] leading-relaxed text-slate-300">
+            {brief.contract?.option_type === 'put' ? (
+              <>
+                In plain words: <strong className="text-rose-300">buy this PUT (PE)</strong> — the
+                model is betting <strong className="text-white">{brief.underlying_symbol}</strong>{' '}
+                goes <strong className="text-rose-300">DOWN</strong>. You pay the premium (the Entry
+                ₹) now; that premium is your maximum loss per lot. The Stop and Targets below are
+                premium (₹) levels, not index points.
+              </>
+            ) : (
+              <>
+                In plain words: <strong className="text-emerald-300">buy this CALL (CE)</strong> —
+                the model is betting <strong className="text-white">{brief.underlying_symbol}</strong>{' '}
+                goes <strong className="text-emerald-300">UP</strong>. You pay the premium (the Entry
+                ₹) now; that premium is your maximum loss per lot. The Stop and Targets below are
+                premium (₹) levels, not index points.
+              </>
+            )}
+          </div>
+
           {/* Premium plan grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mt-4">
             <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/60">
-              <div className="text-slate-400 text-[10px] uppercase tracking-wider">Entry</div>
+              <div
+                title="Entry — the premium (₹) you aim to pay for this option. Treat it as your maximum buy price."
+                className="text-slate-400 text-[10px] uppercase tracking-wider"
+              >
+                Entry
+              </div>
               <div className="mono-num font-bold text-white mt-0.5">
                 ₹{brief.entry?.toFixed(2) ?? '—'}
               </div>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950/60 border border-rose-900/40">
-              <div className="text-rose-400 text-[10px] uppercase tracking-wider">Stop</div>
+              <div
+                title="Stop — exit (sell) if the premium falls to this level. It caps the loss per lot and is always below the entry for a BUY brief."
+                className="text-rose-400 text-[10px] uppercase tracking-wider"
+              >
+                Stop
+              </div>
               <div className="mono-num font-bold text-rose-300 mt-0.5">
                 ₹{brief.stop_loss?.toFixed(2) ?? '—'}
               </div>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950/60 border border-emerald-900/40">
-              <div className="text-emerald-400 text-[10px] uppercase tracking-wider">Targets</div>
+              <div
+                title="Targets — premium levels to book profit: T1 first, T2 optional runner."
+                className="text-emerald-400 text-[10px] uppercase tracking-wider"
+              >
+                Targets
+              </div>
               <div className="mono-num font-bold text-emerald-300 mt-0.5">
                 {(brief.targets || []).map((t) => `₹${t.toFixed(1)}`).join(' / ') || '—'}
               </div>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/60">
-              <div className="text-slate-400 text-[10px] uppercase tracking-wider">Size</div>
+              <div
+                title="Size — how many lots to buy. lots × lot-size = number of option units."
+                className="text-slate-400 text-[10px] uppercase tracking-wider"
+              >
+                Size
+              </div>
               <div className="mono-num font-bold text-slate-200 mt-0.5">
                 {brief.lots != null
                   ? `${brief.lots} lot${brief.lots === 1 ? '' : 's'}${brief.lot_size ? ` (${brief.lots * brief.lot_size} units)` : ''}`
@@ -225,13 +286,23 @@ export const TradeBriefCard: React.FC<TradeBriefCardProps> = ({ brief, symbol })
               </div>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/60">
-              <div className="text-sky-400 text-[10px] uppercase tracking-wider">Risk : Reward</div>
+              <div
+                title="Risk : Reward — expected reward per ₹1 of risk at T1. 2.0 or higher is generally considered healthy."
+                className="text-sky-400 text-[10px] uppercase tracking-wider"
+              >
+                Risk : Reward
+              </div>
               <div className="mono-num font-bold text-sky-300 mt-0.5">
                 {brief.risk_reward != null ? `1 : ${brief.risk_reward.toFixed(2)}` : '—'}
               </div>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/60">
-              <div className="text-slate-400 text-[10px] uppercase tracking-wider">Net EV</div>
+              <div
+                title="Net EV — average expected profit per trade after all Indian costs (brokerage, STT, exchange/SEBI fees, stamp duty, slippage, spread). Positive = worth considering."
+                className="text-slate-400 text-[10px] uppercase tracking-wider"
+              >
+                Net EV
+              </div>
               <div className="mono-num font-bold text-slate-200 mt-0.5">
                 {brief.net_expected_value != null
                   ? `₹${brief.net_expected_value.toFixed(0)}`

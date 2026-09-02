@@ -45,6 +45,7 @@ class MarketRegime(str, enum.Enum):
     STRONG_DOWNTREND = "strong_downtrend"
     HIGH_VOLATILITY = "high_volatility"
     LOW_VOLATILITY = "low_volatility"
+    NORMAL_VOLATILITY = "normal_volatility"
     EVENT_DRIVEN = "event_driven"
     UNCERTAIN = "uncertain"
 

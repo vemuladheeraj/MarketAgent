@@ -7,11 +7,18 @@ from app.data.providers.base import MarketDataProvider, ProviderError
 from app.data.providers.indstocks import INDstocksMarketDataProvider
 from app.data.providers.nse import NSEMarketDataProvider
 
+try:
+    from app.data.providers.us_markets import USMarketsProvider
+except Exception:  # pragma: no cover - optional dependency path
+    USMarketsProvider = None  # type: ignore[assignment]
+
 #: Registry of available providers keyed by ``.name``.
 PROVIDER_REGISTRY: dict[str, type[MarketDataProvider]] = {
     NSEMarketDataProvider.name: NSEMarketDataProvider,
     INDstocksMarketDataProvider.name: INDstocksMarketDataProvider,
 }
+if USMarketsProvider is not None:
+    PROVIDER_REGISTRY[USMarketsProvider.name] = USMarketsProvider
 
 
 def register_provider(cls: type[MarketDataProvider]) -> type[MarketDataProvider]:

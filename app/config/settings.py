@@ -97,6 +97,16 @@ class MarketConfig(BaseModel):
     timezone: str = "Asia/Kolkata"
     sessions: dict[str, TradingSession]
     instruments: list[ConfigInstrumentEntry] = Field(default_factory=list)
+    
+    # 🆕 Multi-market support
+    active_markets: Literal["india", "us", "both"] = Field(
+        default="india",
+        description="Which markets to trade: 'india' (NSE only), 'us' (US only), 'both' (24/5)"
+    )
+    us_tickers: list[str] = Field(
+        default_factory=lambda: ["SPY", "QQQ", "IWM"],
+        description="US equity tickers to monitor for options (SPY, QQQ, IWM, AAPL, etc.)"
+    )
 
     @model_validator(mode="after")
     def _validate(self) -> "MarketConfig":
@@ -131,6 +141,32 @@ class GeminiConfig(BaseModel):
     model: str = ""
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     max_output_tokens: int = Field(default=2048, gt=0)
+    
+    # 🆕 Enhanced AI features
+    enable_explanations: bool = Field(
+        default=True,
+        description="Explain signals in plain English"
+    )
+    enable_strategy_suggestions: bool = Field(
+        default=True,
+        description="Suggest best strategies for current market"
+    )
+    enable_news_analysis: bool = Field(
+        default=True,
+        description="Analyze news & correlate with price moves"
+    )
+    enable_contradiction_detection: bool = Field(
+        default=True,
+        description="Detect trading contradictions & risks"
+    )
+    enable_chat: bool = Field(
+        default=True,
+        description="Answer trader questions in chat"
+    )
+    enable_action_summaries: bool = Field(
+        default=True,
+        description="Generate action summaries for manual broker placement"
+    )
 
 
 class TelegramConfig(BaseModel):
@@ -270,6 +306,24 @@ class AdvisorConfig(BaseModel):
     max_premium_spread_pct: float = Field(default=5.0, gt=0)
     validity_minutes: int = Field(default=10, ge=1)
     telegram_dedupe_minutes: int = Field(default=15, ge=0)
+    
+    # 🆕 Web dashboard & order placement hints
+    enable_web_dashboard: bool = Field(
+        default=True,
+        description="Enable web dashboard (FastAPI) for trade recommendations"
+    )
+    web_port: int = Field(
+        default=8000,
+        description="Web dashboard port (http://localhost:8000)"
+    )
+    web_enable_charts: bool = Field(
+        default=True,
+        description="Show price charts in web dashboard"
+    )
+    include_broker_steps: bool = Field(
+        default=True,
+        description="Include step-by-step broker instructions for manual order placement"
+    )
 
 
 class LoggingConfig(BaseModel):

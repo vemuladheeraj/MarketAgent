@@ -10,6 +10,8 @@ pandas>=2.2
 numpy>=1.26
 scipy>=1.13
 statsmodels>=0.14
+yfinance>=0.2.32  # US market data (free, stocks & options)
+alpha-vantage>=2.3.1  # US market data alternative (free tier)
 
 # Storage & AI / integrations
 firebase-admin>=6.5
@@ -23,3 +25,9 @@ curl-cffi>=0.10.0
 # seen with google-cloud-firestore / google-api-core>=2.35 on the default `(default)` database.
 google-cloud-firestore==2.21.0
 google-api-core<2.35.0
+
+# Web dashboard
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+websocket-client>=1.6.4

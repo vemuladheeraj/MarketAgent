@@ -13,6 +13,10 @@ environment: development
 # ----------------------------- Market -----------------------------
 market:
   timezone: "Asia/Kolkata"
+  # 🆕 Multi-market support: "india" | "us" | "both" (24/5 trading)
+  active_markets: "india"       # Start with India; change to "both" for 24/5
+  # 🆕 US market tickers to monitor
+  us_tickers: ["SPY", "QQQ", "IWM"]  # Add "AAPL", "MSFT", etc. as needed
   sessions:
     equity_cash:
       name: "NSE Cash Equity"
@@ -35,7 +39,7 @@ market:
 
 # ------------------------- Data provider --------------------------
 provider:
-  name: "indstocks"            # Available: indstocks | nse
+  name: "indstocks"            # Available: indstocks | nse | us_markets
   base_url: ""
   timeout_seconds: 10
   params:
@@ -53,12 +57,20 @@ firestore:
   database: "market"
   credentials_path: ""         # secret — set via FIREBASE_CREDENTIALS_PATH
 
-# --------------------------- AI layer ------------------------------
+# --------------------------- AI layer (Enhanced) ------------------
+# 🆕 Full AI-powered trading advisor with Gemini
 gemini:
   api_key: ""                  # secret — set via GEMINI_API_KEY
-  model: ""
+  model: ""                    # Leave blank for auto (gemini-2.5-flash)
   temperature: 0.2
   max_output_tokens: 2048
+  # 🆕 Enhanced AI features
+  enable_explanations: true              # Explain signals in plain English
+  enable_strategy_suggestions: true      # Suggest best strategies
+  enable_news_analysis: true             # Analyze news & correlate with price
+  enable_contradiction_detection: true   # Detect contradictions & risks
+  enable_chat: true                      # Answer trader questions
+  enable_action_summaries: true          # Generate broker action steps
 
 # ------------------------- Notifications -----------------------------
 telegram:
@@ -67,26 +79,26 @@ telegram:
 
 # ----------------------------- Risk --------------------------------
 risk:
-  account_size: 1000000.0          # INR
+  account_size: 1000000.0          # INR (India) or USD (US)
   risk_per_trade_pct: 1.0          # % of account risked per paper trade
   max_daily_loss_pct: 3.0          # halt paper trading above this % loss
   max_concurrent_paper_trades: 3
   max_trades_per_day: 5
   min_risk_reward: 1.5             # minimum reward:risk
-  min_expected_value: 0.0          # minimum expected value (INR units of R)
+  min_expected_value: 0.0          # minimum expected value (R units)
   max_consecutive_losses: 3
   cooldown_after_loss_minutes: 60  # pause after max consecutive losses
   emergency_disable: false
 
 # ------------------------ Transaction costs -------------------------
-# Indian market cost model (equity derivatives / cash). All percentages are
-# expressed in % of notional traded value unless noted otherwise.
+# Indian market cost model (equity derivatives / cash).
+# Adjust these values for US markets (lower STT, different brokerage, etc.)
 transaction_costs:
-  brokerage: 0.0                    # flat % of notional (0 = free/zero-broker)
+  brokerage: 0.0                    # flat % of notional
   stt_buy_pct: 0.0
-  stt_sell_pct: 0.025               # equity FO sell-side STT example
-  gst_pct: 18.0                     # GST on (brokerage + exchange + SEBI)
-  exchange_charges_pct: 0.045        # NSE turnover fee (approx)
+  stt_sell_pct: 0.025               # equity FO sell-side STT
+  gst_pct: 18.0                     # GST on fees
+  exchange_charges_pct: 0.045        # NSE turnover fee
   sebi_charges_pct: 0.0001
   stamp_duty_pct: 0.003
   slippage_pct: 0.05                # assumed slippage per side
@@ -127,8 +139,9 @@ signal:
     no_trade: 0
 
 # ------------------------- Trade advisor ----------------------------
-# Present-moment companion layer: turns the best accepted signal into a
-# concrete option-contract brief for manual execution (BUY/WAIT).
+# 🆕 Present-moment companion layer with AI insights + web dashboard:
+# Turns the best accepted signal into a concrete option-contract brief for
+# manual execution (BUY/WAIT). Includes AI explanations and broker instructions.
 advisor:
   enabled: true
   min_score: 70                 # briefs require a risk-approved signal at/above this score
@@ -136,6 +149,11 @@ advisor:
   max_premium_spread_pct: 5.0   # warn when (ask-bid)/mid exceeds this
   validity_minutes: 10          # a brief is stale after this many minutes
   telegram_dedupe_minutes: 15   # suppress repeat alerts for the same setup
+  # 🆕 Web dashboard settings
+  enable_web_dashboard: true    # FastAPI web interface for trade recommendations
+  web_port: 8000                # http://localhost:8000
+  web_enable_charts: true       # Show price charts in dashboard
+  include_broker_steps: true    # Include step-by-step broker instructions
 
 # ------------------------- Strategies -------------------------------
 strategies:

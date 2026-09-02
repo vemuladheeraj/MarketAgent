@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import signal
+import threading
 import time
 from dataclasses import dataclass, field
 from types import FrameType
@@ -197,6 +198,9 @@ class MarketAgentApplication:
         return self._started
 
     def _setup_signals(self) -> None:
+        if threading.current_thread() is not threading.main_thread():
+            return
+
         def _handler(sig: int, frame: FrameType | None) -> None:
             self._logger.info("Shutdown signal received: %d", sig)
             self._shutdown_requested = True
